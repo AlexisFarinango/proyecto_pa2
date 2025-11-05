@@ -105,6 +105,7 @@ dayjs.extend(customParseFormat);
 const app = express();
 app.use(cors());
 app.use(express.json());
+app.use(express.urlencoded({ extended: true })); // <- agrega esto
 
 // Cloudinary config
 configure({
@@ -903,24 +904,34 @@ app.get('/api/admin/dirigentes', basicAuth, async (req, res) => {
 
 app.post('/api/admin/dirigentes', basicAuth, async (req, res) => {
   try {
-    const { usuario, password, nombre } = req.body; // nombre del equipo
-    if (!usuario || !password || !nombre) return res.status(400).json({ message: 'Faltan campos' });
+    const { usuario, password, nombre } = req.body;
+    // console.log('POST /dirigentes body:', req.body); // opcional para debug
+
+    if (!usuario || !password || !nombre) {
+      return res.status(400).json({ message: 'Faltan campos' });
+    }
+
+    // opcional: evita duplicados de usuario/equipo
+    const existsUser = await Dirigente.findOne({ usuario });
+    if (existsUser) return res.status(409).json({ message: 'Usuario ya existe' });
 
     const dir = await Dirigente.create({ usuario, password, nombre });
 
-    // crear o vincular equipo sin código
     let equipo = await Equipo.findOne({ nombre });
     if (!equipo) {
-      equipo = await Equipo.create({ nombre, dirigenteId: dir._id, codigo: null });
+      equipo = await Equipo.create({ nombre, dirigenteId: dir._id }); // ← sin codigo:null
     } else {
       equipo.dirigenteId = dir._id;
       await equipo.save();
     }
+
     res.json({ message: 'Dirigente creado', dirigente: dir });
   } catch (e) {
+    console.error('Error creando dirigente:', e);
     res.status(500).json({ message: 'Error creando dirigente', detail: e.message });
   }
 });
+
 
 app.put('/api/admin/dirigentes/:id', basicAuth, async (req, res) => {
   try {
@@ -933,12 +944,12 @@ app.put('/api/admin/dirigentes/:id', basicAuth, async (req, res) => {
     await d.save();
 
     // asegurar vinculación de equipo
-    let eq = await Equipo.findOne({ nombre });
-    if (!eq) {
-      eq = await Equipo.create({ nombre, dirigenteId: d._id, codigo: null });
+    let equipo = await Equipo.findOne({ nombre });
+    if (!equipo) {
+      equipo = await Equipo.create({ nombre, dirigenteId: dir._id }); // ← sin codigo:null
     } else {
-      eq.dirigenteId = d._id;
-      await eq.save();
+      equipo.dirigenteId = dir._id;
+      await equipo.save();
     }
     res.json({ message: 'Dirigente editado' });
   } catch (e) {
@@ -1008,6 +1019,7 @@ app.put('/api/admin/equipos/:id', basicAuth, async (req, res) => {
       // si seteas un código, verifica que no exista en otro
       if (codigo === null || codigo === '') {
         eq.codigo = null;
+        await Equipo.updateOne({ _id: eq._id }, { $unset: { codigo: 1 } });
       } else {
         const dup = await Equipo.findOne({ codigo, _id: { $ne: eq._id } });
         if (dup) return res
