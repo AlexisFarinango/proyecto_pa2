@@ -6,11 +6,12 @@ const UserSchema = new mongoose.Schema({
   lastName:  { type: String, required: true },
   dob:       { type: Date, required: true },
   age:       { type: Number, required: true },
-  cedula:    { type: String, required: true, unique: true },
+  identificacion:    { type: String, required: true, unique: true },
   numjugador:{ type: Number, required: true },
   idImageUrl:    { type: String, required: true },
   idBackImageUrl: { type: String, required: true },
   selfieImageUrl:{ type: String, required: true },
+  autorizacionUrl: { type: String, default: null },
   team:      { type: String, required: true },
   createdAt: { type: Date, default: Date.now }
 });
