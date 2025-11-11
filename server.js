@@ -103,7 +103,31 @@ function drawHeader(doc) {
 dayjs.extend(customParseFormat);
 
 const app = express();
-app.use(cors());
+const allowedOrigins = [
+  'http://localhost:5173',
+  'http://127.0.0.1:5173',
+  'https://proyecto-pa-hwva.vercel.app',
+];
+
+app.use((req, res, next) => {
+  const origin = req.headers.origin;
+  if (origin && allowedOrigins.includes(origin)) {
+    res.header('Access-Control-Allow-Origin', origin);
+  }
+  res.header('Vary', 'Origin'); // evita cachear CORS incorrecto
+  res.header('Access-Control-Allow-Credentials', 'true');
+  res.header('Access-Control-Allow-Headers', 'Content-Type, Authorization');
+  res.header('Access-Control-Allow-Methods', 'GET,POST,PUT,DELETE,OPTIONS');
+  if (req.method === 'OPTIONS') return res.sendStatus(200); // responde preflight aquí mismo
+  next();
+});
+
+// Manejo de preflight OPTIONS
+app.options("*", (req, res) => {
+  res.sendStatus(200);
+});
+
+//app.use(cors());
 app.use(express.json());
 app.use(express.urlencoded({ extended: true })); // <- agrega esto
 
@@ -423,6 +447,35 @@ function toCloudinaryPng(url) {
   }
 }
 
+// Fuerza formato (jpg/png) y tamaño razonable para Excel
+function toCloudinaryFormat(url, target = 'jpg', width = 800) {
+  try {
+    const u = new URL(url);
+    if (!u.hostname.includes('res.cloudinary.com')) return url;
+
+    const parts = u.pathname.split('/');
+    const upIdx = parts.indexOf('upload');
+    if (upIdx === -1) return url;
+
+    const after = parts.slice(upIdx + 1);
+    const hasOps = after.length && after[0] && !after[0].startsWith('v');
+
+    // quita metadatos y ajusta ancho para que el xlsx no pese demasiado
+    const transform = `f_${target},fl_force_strip,q_auto:good,w_${width},c_limit`;
+
+    if (hasOps) {
+      after[0] = `${transform},${after[0]}`;
+    } else {
+      after.unshift(transform);
+    }
+    u.pathname = [...parts.slice(0, upIdx + 1), ...after].join('/');
+    return u.toString();
+  } catch {
+    return url;
+  }
+}
+
+
 async function fetchImageBuffer(url) {
   const safeUrl = toCloudinaryPng(url);
   const resp = await axios.get(safeUrl, {
@@ -477,25 +530,23 @@ app.get('/api/jugadores/reporte-pdf/:idDirigente', async (req, res) => {
 
     const doc = new PDFDocument({
       size: 'A4',
-      margins: { top: 54, left: 36, right: 36, bottom: 36 }, // margen superior un poco mayor para header
+      margins: { top: 54, left: 36, right: 36, bottom: 36 },
     });
     doc.pipe(res);
 
-    // Marca de agua y encabezado de la primera página
+    // ===== Página 1: marca de agua + encabezado institucional =====
     drawWatermark(doc);
-    let y = drawHeader(doc); // posición inicial para contenido bajo el header
+    let y = drawHeader(doc); // posición inicial bajo el header institucional
 
-    // ======= Título del equipo (centrado bajo el header) =======
+    // ===== Título del equipo SOLO en la primera página =====
     doc.save();
     doc.font('Helvetica-Bold').fontSize(16).fillColor(COLOR_TEXT)
        .text(`Equipo: ${equipoNombre}`, doc.page.margins.left, y, { align: 'center' });
     doc.restore();
-    //y += 18;
-    const GAP_AFTER_TEAM_TITLE = 28;   // <- más espacio
+    const GAP_AFTER_TEAM_TITLE = 28;
     y += GAP_AFTER_TEAM_TITLE;
 
-
-    // ======= Tabla =======
+    // ===== Definición de tabla =====
     const cols = [
       { key: 'firstName',       title: 'Nombres',        w: 80 },
       { key: 'lastName',        title: 'Apellidos',      w: 70 },
@@ -506,72 +557,69 @@ app.get('/api/jugadores/reporte-pdf/:idDirigente', async (req, res) => {
       { key: 'team',            title: 'Equipo',         w: 75 },
       { key: 'selfie',          title: 'Selfie',         w: 62 },
     ];
-    const colGap = 6;
-    const startX = doc.page.margins.left;
+    const colGap   = 6;
+    const startX   = doc.page.margins.left;
+    const tableW   = cols.reduce((acc, c) => acc + c.w, 0) + colGap * (cols.length - 1);
+    const tableRX  = startX + tableW;
 
-    const tableWidth = cols.reduce((acc, c) => acc + c.w, 0) + colGap * (cols.length - 1);
-    const tableRightX = startX + tableWidth;
-
-    // Header de columnas
-    doc.save();
-    doc.rect(startX - 2, y - 2, tableWidth + 4, 18).fill('#f5f5f5');
-    doc.fillColor('#111').font('Helvetica-Bold').fontSize(9);
-    let x = startX;
-    cols.forEach(c => {
-      doc.text(c.title, x, y, { width: c.w });
-      x += c.w + colGap;
-    });
-    doc.restore();
-
-    y += 16;
-    doc.moveTo(startX, y).lineTo(tableRightX, y).strokeColor('#d9d9d9').lineWidth(0.7).stroke();
-    y += 6;
-
-    // Filas
-    doc.font('Helvetica').fontSize(9).fillColor(COLOR_TEXT);
-
-    const printHeaderOnNewPage = () => {
-      doc.addPage();
-      drawWatermark(doc);
-      y = drawHeader(doc);
-
-      doc.font('Helvetica-Bold').fontSize(16).fillColor(COLOR_TEXT)
-         .text(equipoNombre, { align: 'center' });
-      y += 18;
-
-      // redraw table header
+    // ===== Helper: dibuja encabezado de la tabla =====
+    function drawTableHeaderRow() {
       doc.save();
-      doc.rect(startX - 2, y - 2, tableWidth + 4, 18).fill('#f5f5f5');
+      doc.rect(startX - 2, y - 2, tableW + 4, 18).fill('#f5f5f5');
       doc.fillColor('#111').font('Helvetica-Bold').fontSize(9);
-      let x2 = startX;
+      let x = startX;
       cols.forEach(c => {
-        doc.text(c.title, x2, y, { width: c.w });
-        x2 += c.w + colGap;
+        doc.text(c.title, x, y, { width: c.w });
+        x += c.w + colGap;
       });
       doc.restore();
 
       y += 16;
-      doc.moveTo(startX, y).lineTo(tableRightX, y).strokeColor('#d9d9d9').lineWidth(0.7).stroke();
+      doc.moveTo(startX, y).lineTo(tableRX, y).strokeColor('#d9d9d9').lineWidth(0.7).stroke();
       y += 6;
-      doc.font('Helvetica').fontSize(9).fillColor(COLOR_TEXT);
-    };
+    }
 
+    // ===== Helpers de salto de página =====
+    // Base: nueva página con marca de agua + encabezado institucional
+    function newPageBase() {
+      doc.addPage();
+      drawWatermark(doc);
+      y = drawHeader(doc);
+      // OJO: aquí NO imprimimos nombre de equipo (solo va en la primera página)
+    }
+    // Cuando sí continuarán filas de la tabla
+    function newPageForRows() {
+      newPageBase();
+      drawTableHeaderRow();
+      doc.font('Helvetica').fontSize(9).fillColor(COLOR_TEXT);
+    }
+    // Cuando NO habrá filas (ej: pasamos directo a la declaratoria/firmas)
+    function newPageForDeclaration() {
+      newPageBase();
+      doc.font('Helvetica').fontSize(9).fillColor(COLOR_TEXT);
+    }
+
+    // ===== Encabezado de la tabla de la primera página =====
+    drawTableHeaderRow();
+    doc.font('Helvetica').fontSize(9).fillColor(COLOR_TEXT);
+
+    // ===== Filas =====
     for (const j of jugadores) {
-      // salto si no cabe
+      // Si no cabe una fila con imagen (alto aprox 130), saltamos de página con encabezado de tabla
       if (y > doc.page.height - doc.page.margins.bottom - 130) {
-        printHeaderOnNewPage();
+        newPageForRows();
       }
 
-      x = startX;
+      let x = startX;
       const fecha = j.dob ? dayjs(j.dob).format('DD/MM/YYYY') : '';
       const row = {
-        firstName: j.firstName || '',
-        lastName: j.lastName || '',
-        age: (j.age ?? '').toString(),
-        dob: fecha,
-        identificacion: j.identificacion || '',
-        numjugador: (j.numjugador ?? '').toString(),
-        team: j.team || '',
+        firstName:       j.firstName || '',
+        lastName:        j.lastName || '',
+        age:             (j.age ?? '').toString(),
+        dob:             fecha,
+        identificacion:  j.identificacion || '',
+        numjugador:      (j.numjugador ?? '').toString(),
+        team:            j.team || '',
       };
 
       // texto (hasta Equipo)
@@ -585,10 +633,10 @@ app.get('/api/jugadores/reporte-pdf/:idDirigente', async (req, res) => {
       let selfieDrawnHeight = 0;
       try {
         if (j.selfieImageUrl) {
-          const thumbUrl = toCloudinaryThumb(j.selfieImageUrl);  // tu helper actual
-          const buf = await fetchImageBuffer(thumbUrl);          // tu helper actual
-          const imgW = Math.min(selfieCol.w, 58);
-          const imgH = 42;
+          const thumbUrl = toCloudinaryThumb(j.selfieImageUrl);
+          const buf      = await fetchImageBuffer(thumbUrl);
+          const imgW     = Math.min(selfieCol.w, 58);
+          const imgH     = 42;
           doc.image(buf, x, y - 2, { fit: [imgW, imgH], width: imgW, height: imgH });
           selfieDrawnHeight = imgH;
         } else {
@@ -601,16 +649,16 @@ app.get('/api/jugadores/reporte-pdf/:idDirigente', async (req, res) => {
       const rowHeight = Math.max(14, selfieDrawnHeight ? selfieDrawnHeight + 4 : 14);
       y += rowHeight;
 
-      doc.moveTo(startX, y).lineTo(tableRightX, y).strokeColor('#eeeeee').lineWidth(0.5).stroke();
+      doc.moveTo(startX, y).lineTo(tableRX, y).strokeColor('#eeeeee').lineWidth(0.5).stroke();
       y += 4;
     }
 
-
     // ===== Declaración y firmas =====
     y += 22;
-    const MIN_ROOM = 180;
+    const MIN_ROOM = 180; // espacio mínimo requerido para toda la sección de declaración+firmas
     if (y > doc.page.height - doc.page.margins.bottom - MIN_ROOM) {
-      printHeaderOnNewPage();
+      // Si no alcanza el espacio, nueva página SOLO para la declaración (sin encabezados de tabla)
+      newPageForDeclaration();
     }
 
     doc.fontSize(10).fillColor(COLOR_TEXT).font('Helvetica');
@@ -622,21 +670,21 @@ app.get('/api/jugadores/reporte-pdf/:idDirigente', async (req, res) => {
       'cualquier cambio o corrección que se deba realizar y entiendo que el uso de información falsa o incompleta ' +
       'puede acarrear sanciones por parte de la organización del torneo.',
       startX, y,
-      { align: 'justify', width: tableWidth }
+      { align: 'justify', width: tableW }
     );
 
-    // --- MÁS ESPACIO BAJO LA DECLARATORIA ---
-    const GAP_AFTER_DECLARATION = 70; // ajusta a tu gusto (50–90)
+    // espacio bajo la declaratoria
+    const GAP_AFTER_DECLARATION = 70;
     doc.y = doc.y + GAP_AFTER_DECLARATION;
 
-    // Firma (centrada usando ancho de la tabla para asegurar centrado real)
-    doc.text('_______________________________', startX, doc.y, { width: tableWidth, align: 'center' });
-    doc.text('Firma del Dirigente',           startX, undefined, { width: tableWidth, align: 'center' });
+    // Firma centrada
+    doc.text('_______________________________', startX, doc.y, { width: tableW, align: 'center' });
+    doc.text('Firma del Dirigente',           startX, undefined, { width: tableW, align: 'center' });
 
-    // Un poco de espacio y los campos de nombre/identificación
+    // Campos de nombre/identificación
     doc.moveDown(1.2);
-    doc.text('Nombre del Dirigente: _______________________________', startX, undefined, { width: tableWidth, align: 'center' });
-    doc.text('Identificación del Dirigente: ________________________', startX, undefined, { width: tableWidth, align: 'center' });
+    doc.text('Nombre del Dirigente: _______________________________', startX, undefined, { width: tableW, align: 'center' });
+    doc.text('Identificación del Dirigente: ________________________', startX, undefined, { width: tableW, align: 'center' });
 
     doc.end();
   } catch (err) {
@@ -806,6 +854,8 @@ app.get('/api/users', async (req, res) => {
 // Protected export endpoint
 app.get('/api/users/export', basicAuth, async (req, res) => {
   try {
+    res.setHeader("Access-Control-Expose-Headers", "Content-Disposition");
+    res.setTimeout(5 * 60 * 1000); 
     const users = await User.find().sort({ createdAt: 1 }).lean();
     const workbook = new ExcelJS.Workbook();
     const worksheet = workbook.addWorksheet('Usuarios');
@@ -845,28 +895,35 @@ app.get('/api/users/export', basicAuth, async (req, res) => {
       const rowNumber = i + 2;
       worksheet.getRow(rowNumber).height = 80;
 
-      if (u.idImageUrl) {
-        const resp = await axios.get(u.idImageUrl, { responseType: 'arraybuffer' });
-        const buf = Buffer.from(resp.data);
-        const ext = (u.idImageUrl.split('.').pop().split('?')[0] || 'png').toLowerCase();
-        const imageId = workbook.addImage({ buffer: buf, extension: ext });
-        worksheet.addImage(imageId, { tl: { col: 7, row: rowNumber - 1 }, ext: { width: 120, height: 80 } });
-      }
-      if (u.idBackImageUrl) {
-        const resp = await axios.get(u.idBackImageUrl, { responseType: 'arraybuffer' });
-        const buf = Buffer.from(resp.data);
-        const ext = (u.idBackImageUrl.split('.').pop().split('?')[0] || 'png').toLowerCase();
-        const imageId3 = workbook.addImage({ buffer: buf, extension: ext });
-        worksheet.addImage(imageId3, { tl: { col: 8, row: rowNumber - 1 }, ext: { width: 120, height: 80 } });
-      }
+      const fetchBuf = async (origUrl) => {
+        const safe = toCloudinaryFormat(origUrl, 'jpg', 800); // ← fuerza JPG
+        const resp = await axios.get(safe, { responseType: 'arraybuffer' });
+        return Buffer.from(resp.data);
+      };
 
-      if (u.selfieImageUrl) {
-        const resp2 = await axios.get(u.selfieImageUrl, { responseType: 'arraybuffer' });
-        const buf2 = Buffer.from(resp2.data);
-        const theext2 = (u.selfieImageUrl.split('.').pop().split('?')[0] || 'png').toLowerCase();
-        const imageId2 = workbook.addImage({ buffer: buf2, extension: theext2 });
-        worksheet.addImage(imageId2, { tl: { col: 9, row: rowNumber - 1 }, ext: { width: 120, height: 80 } });
-      }
+      try {
+        if (u.idImageUrl) {
+          const buf = await fetchBuf(u.idImageUrl);
+          const imageId = workbook.addImage({ buffer: buf, extension: 'jpeg' });
+          worksheet.addImage(imageId, { tl: { col: 7, row: rowNumber - 1 }, ext: { width: 120, height: 80 } });
+        }
+      } catch (e) { /* opcional: log */ }
+
+      try {
+        if (u.idBackImageUrl) {
+          const buf = await fetchBuf(u.idBackImageUrl);
+          const imageId3 = workbook.addImage({ buffer: buf, extension: 'jpeg' });
+          worksheet.addImage(imageId3, { tl: { col: 8, row: rowNumber - 1 }, ext: { width: 120, height: 80 } });
+        }
+      } catch (e) { /* opcional: log */ }
+
+      try {
+        if (u.selfieImageUrl) {
+          const buf2 = await fetchBuf(u.selfieImageUrl);
+          const imageId2 = workbook.addImage({ buffer: buf2, extension: 'jpeg' });
+          worksheet.addImage(imageId2, { tl: { col: 9, row: rowNumber - 1 }, ext: { width: 120, height: 80 } });
+        }
+      } catch (e) { /* opcional: log */ }
     }
 
     const buffer = await workbook.xlsx.writeBuffer();
