@@ -611,7 +611,7 @@ app.get('/api/jugadores/reporte-pdf/:idDirigente', async (req, res) => {
       }
 
       let x = startX;
-      const fecha = j.dob ? dayjs(j.dob).format('DD/MM/YYYY') : '';
+      const fecha = j.dob ? new Date(j.dob).toISOString().slice(0,10).split('-').reverse().join('/') : '';
       const row = {
         firstName:       j.firstName || '',
         lastName:        j.lastName || '',
@@ -774,7 +774,7 @@ app.get('/api/jugadores/reporte/:idDirigente', async (req, res) => {
             textCell(j.firstName),
             textCell(j.lastName),
             textCell(j.age),
-            textCell(j.dob ? dayjs(j.dob).format('DD/MM/YYYY') : ''),
+            textCell(j.dob ? String(j.dob).slice(0,10).split('-').reverse().join('/') : ''),
             textCell(j.identificacion),
             textCell(j.numjugador),
             textCell(j.team),
@@ -879,7 +879,7 @@ app.get('/api/users/export', basicAuth, async (req, res) => {
         firstName: u.firstName,
         lastName: u.lastName,
         age: `${u.age} AÑOS`,
-        dob: dayjs(u.dob).format('DD/MM/YYYY'),
+        dob: new Date(u.dob).toISOString().slice(0,10).split('-').reverse().join('/'),
         identificacion: u.identificacion,
         numjugador: u.numjugador,
         team: u.team,
