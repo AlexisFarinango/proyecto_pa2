@@ -10,17 +10,23 @@ const configure = (opts) => {
   });
 };
 
-const uploadBuffer = (buffer, filename, folder = 'Futbol') => {
+const uploadBuffer = (buffer, filename, resourceType = 'image', folder = 'Futbol') => {
   return new Promise((resolve, reject) => {
     const uploadStream = cloudinary.uploader.upload_stream(
-      { folder },
+      {
+        folder,
+        public_id: filename,
+        resource_type: resourceType, // 👈 Aquí la magia
+      },
       (error, result) => {
         if (error) return reject(error);
         resolve(result);
       }
     );
+
     streamifier.createReadStream(buffer).pipe(uploadStream);
   });
 };
+
 
 module.exports = { configure, uploadBuffer };

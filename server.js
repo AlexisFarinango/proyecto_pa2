@@ -14,6 +14,7 @@ const ExcelJS = require('exceljs');
 const axios = require('axios');
 const puppeteer = require('puppeteer');
 const PDFDocument = require('pdfkit');
+const { PDFDocument: PDFLibDocument, StandardFonts, rgb } = require('pdf-lib');
 const { Request, Response } = require ('express');
 const path = require('path');
 const fs   = require('fs');
@@ -245,9 +246,13 @@ app.post(
       const requiereAut = age >= 14 && age < 18;
       if (requiereAut) {
         if (!req.files['autorizacion']) return res.status(400).json({ message: 'Autorización requerida (14-17 años)' });
+        const autFile = req.files['autorizacion'][0];
+        const isPdf = autFile.mimetype === 'application/pdf';
+
         const autRes = await uploadBuffer(
-          req.files['autorizacion'][0].buffer,
-          `aut_${identificacion}_${Date.now()}`
+          autFile.buffer,
+          `aut_${identificacion}_${Date.now()}`,
+          isPdf ? 'raw' : 'image' // 👈 aquí elegimos
         );
         autorizacionUrl = autRes.secure_url;
       }
@@ -389,13 +394,23 @@ app.put(
       // Subidas condicionales
       const doUpload = async (field, name) => {
         if (req.files[field]) {
+          const file = req.files[field][0];
+
+          let resourceType = 'image';
+          if (field === 'autorizacion' && file.mimetype === 'application/pdf') {
+            resourceType = 'raw';
+          }
+
           const respUp = await uploadBuffer(
-            req.files[field][0].buffer,
-            `${name}_${jugador.identificacion}_${Date.now()}`
+            file.buffer,
+            `${name}_${jugador.identificacion}_${Date.now()}`,
+            resourceType
           );
+
           jugador[`${field}Url`] = respUp.secure_url;
         }
       };
+
 
       await doUpload('idImage', 'id_front_edit');
       await doUpload('idBackImage', 'id_back_edit');
@@ -514,6 +529,181 @@ function toCloudinaryThumb(url) {
     return u.toString();
   } catch { return url; }
 }
+// Consolidado de TODAS las autorizaciones en un solo PDF
+app.get('/api/admin/autorizaciones/consolidado', basicAuth, async (req, res) => {
+  try {
+    // Usuarios de 14 a 17 años que SÍ tienen autorización
+    const users = await User.find({
+      age: { $gte: 14, $lt: 18 },
+      autorizacionUrl: { $ne: null },
+    })
+      .sort({ lastName: 1, firstName: 1 })
+      .lean();
+
+    if (!users.length) {
+      return res.status(404).json({ message: 'No hay autorizaciones para consolidar' });
+    }
+
+    // PDF maestro
+    const masterDoc = await PDFLibDocument.create();
+    const helveticaFont = await masterDoc.embedFont(StandardFonts.Helvetica);
+
+    // Helper para descargar bytes desde la URL
+    const fetchBuffer = async (url) => {
+      const resp = await axios.get(url, {
+        responseType: 'arraybuffer',
+        timeout: 20000,
+        validateStatus: (s) => s >= 200 && s < 400,
+      });
+      return {
+        buffer: Buffer.from(resp.data),
+        contentType: resp.headers['content-type'] || '',
+      };
+    };
+
+    // Helper: detectar si es PDF
+    const isPdfBuffer = (buffer, contentType, url) => {
+      const ct = (contentType || '').toLowerCase();
+      if (ct.includes('pdf')) return true;
+      if (url && url.toLowerCase().includes('.pdf')) return true;
+      return (
+        buffer.length > 4 &&
+        buffer[0] === 0x25 && // %
+        buffer[1] === 0x50 && // P
+        buffer[2] === 0x44 && // D
+        buffer[3] === 0x46    // F
+      );
+    };
+
+    let totalPaginas = 0;
+
+    for (const u of users) {
+      if (!u.autorizacionUrl) continue;
+
+      try {
+        const { buffer, contentType } = await fetchBuffer(u.autorizacionUrl);
+
+        const esPdf = isPdfBuffer(buffer, contentType, u.autorizacionUrl);
+
+        // Etiqueta con datos del jugador
+        const label =
+          `${u.firstName || ''} ${u.lastName || ''}`.trim() +
+          (u.identificacion ? ` - ${u.identificacion}` : '');
+
+        if (esPdf) {
+          // 🔹 Caso 1: el archivo es PDF → copiamos sus páginas al maestro
+          let srcDoc;
+          try {
+            srcDoc = await PDFLibDocument.load(buffer, {
+              ignoreEncryption: true,
+            });
+          } catch (loadErr) {
+            console.warn(
+              `No se pudo leer el PDF de ${u._id} (${u.autorizacionUrl}):`,
+              loadErr.message
+            );
+            // Intentamos tratarlo como imagen como fallback
+            throw loadErr;
+          }
+
+          const indices = srcDoc.getPageIndices();
+          const srcPages = await masterDoc.copyPages(srcDoc, indices);
+
+          srcPages.forEach((page) => {
+            const { width, height } = page.getSize();
+            // Etiqueta arriba
+            page.drawText(label, {
+              x: 40,
+              y: height - 40,
+              size: 12,
+              font: helveticaFont,
+              color: rgb(0, 0, 0),
+            });
+            masterDoc.addPage(page);
+            totalPaginas++;
+          });
+        } else {
+          // 🔹 Caso 2: es imagen (JPG/PNG) → creamos una página y pegamos la imagen
+          const page = masterDoc.addPage();
+          const { width, height } = page.getSize();
+
+          let img;
+          const isJpeg =
+            buffer.length > 2 && buffer[0] === 0xff && buffer[1] === 0xd8;
+          if (isJpeg) {
+            img = await masterDoc.embedJpg(buffer);
+          } else {
+            img = await masterDoc.embedPng(buffer);
+          }
+
+          const maxW = width - 80;
+          const maxH = height - 140; // dejamos espacio para texto
+          const scale = Math.min(maxW / img.width, maxH / img.height, 1);
+          const imgW = img.width * scale;
+          const imgH = img.height * scale;
+
+          const x = (width - imgW) / 2;
+          const y = (height - imgH) / 2;
+
+          page.drawImage(img, {
+            x,
+            y,
+            width: imgW,
+            height: imgH,
+          });
+
+          // Etiqueta bajo la imagen
+          page.drawText(label, {
+            x: 40,
+            y: 40,
+            size: 12,
+            font: helveticaFont,
+            color: rgb(0, 0, 0),
+          });
+
+          totalPaginas++;
+        }
+      } catch (err) {
+        console.warn(
+          `No se pudo procesar autorización de usuario ${u._id} (${u.autorizacionUrl}):`,
+          err.message
+        );
+        // seguimos con los demás usuarios
+      }
+    }
+
+    if (totalPaginas === 0) {
+      return res
+        .status(500)
+        .json({ message: 'No se pudo agregar ninguna autorización al PDF' });
+    }
+
+    const pdfBytes = await masterDoc.save();
+
+    res.setHeader('Content-Type', 'application/pdf');
+    res.setHeader(
+      'Content-Disposition',
+      'attachment; filename="Autorizaciones_consolidadas.pdf"'
+    );
+    res.setHeader('Content-Length', pdfBytes.length);
+    res.setHeader('Cache-Control', 'no-store');
+    res.end(Buffer.from(pdfBytes));
+  } catch (err) {
+    console.error('Error consolidando autorizaciones:', err);
+    if (!res.headersSent) {
+      res.status(500).json({
+        message: 'Error generando PDF consolidado',
+        detail: err.message,
+      });
+    } else {
+      try {
+        res.end();
+      } catch {}
+    }
+  }
+});
+
+
 
 app.get('/api/jugadores/reporte-pdf/:idDirigente', async (req, res) => {
   try {
