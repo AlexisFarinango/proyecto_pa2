@@ -9,6 +9,7 @@ const { configure, uploadBuffer } = require('./utils/cloudinary');
 const User = require('./models/User');
 const Dirigente = require('./models/Dirigente');
 const Equipo = require('./models/Equipo');
+const FixtureFecha = require('./models/FixtureFecha');
 const basicAuth = require('./middleware/basicAuth');
 const ExcelJS = require('exceljs');
 const axios = require('axios');
@@ -38,6 +39,17 @@ const {
 const COLOR_PRIMARY = '#c62828'; // rojo del escudo
 const COLOR_SECOND  = '#0b2a6d'; // azul del balón
 const COLOR_TEXT    = '#222';
+
+function parseDateOrNull(value) {
+  if (!value) return null;
+  const d = dayjs(value, [
+    dayjs.ISO_8601,
+    'YYYY-MM-DD',
+    'YYYY-MM-DDTHH:mm',
+    'DD/MM/YYYY',
+  ], true);
+  return d.isValid() ? d.toDate() : null;
+}
 
 
 // Carga el logo (binario) una vez
@@ -702,6 +714,210 @@ app.get('/api/admin/autorizaciones/consolidado', basicAuth, async (req, res) => 
     }
   }
 });
+
+
+
+app.get('/api/fixture', async (req, res) => {
+  try {
+    const fechas = await FixtureFecha.find()
+      .sort({ numeroFecha: 1 })
+      .populate('partidos.equipo1', 'nombre')
+      .populate('partidos.equipo2', 'nombre')
+      .lean();
+
+    res.json(fechas);
+  } catch (e) {
+    console.error('Error obteniendo fixture:', e);
+    res.status(500).json({ message: 'Error obteniendo fixture', detail: e.message });
+  }
+});
+
+// Público: una fecha concreta (por número de fecha)
+app.get('/api/fixture/:numeroFecha', async (req, res) => {
+  try {
+    const num = Number(req.params.numeroFecha);
+    if (isNaN(num)) return res.status(400).json({ message: 'Número de fecha inválido' });
+
+    const fecha = await FixtureFecha.findOne({ numeroFecha: num })
+      .populate('partidos.equipo1', 'nombre')
+      .populate('partidos.equipo2', 'nombre')
+      .lean();
+
+    if (!fecha) return res.status(404).json({ message: 'Fecha no encontrada' });
+
+    res.json(fecha);
+  } catch (e) {
+    console.error('Error obteniendo fecha fixture:', e);
+    res.status(500).json({ message: 'Error obteniendo fecha', detail: e.message });
+  }
+});
+
+
+// Admin: crear nueva fecha del fixture
+app.post('/api/fixture', basicAuth, async (req, res) => {
+  try {
+    const { numeroFecha, titulo, fechaCabecera, partidos } = req.body;
+
+    const num = Number(numeroFecha);
+    if (isNaN(num) || num <= 0) {
+      return res.status(400).json({ message: 'numeroFecha debe ser un número positivo' });
+    }
+    if (!titulo) return res.status(400).json({ message: 'titulo es requerido' });
+
+    const existente = await FixtureFecha.findOne({ numeroFecha: num });
+    if (existente) {
+      return res.status(400).json({ message: 'Ya existe una fecha con ese número' });
+    }
+
+    const partidosNorm = Array.isArray(partidos)
+      ? partidos.map((p) => ({
+          equipo1: p.equipo1,
+          equipo2: p.equipo2,
+          // 👇 puede venir null o vacío
+          fechaPartido: parseDateOrNull(p.fechaPartido),
+          valor_adicional_eq1: Array.isArray(p.valor_adicional_eq1)
+            ? p.valor_adicional_eq1
+            : [],
+          valor_adicional_eq2: Array.isArray(p.valor_adicional_eq2)
+            ? p.valor_adicional_eq2
+            : [],
+        }))
+      : [];
+
+    // ✅ solo validamos que tengan equipos; la fecha del partido puede ser null
+    for (const p of partidosNorm) {
+      if (!p.equipo1 || !p.equipo2) {
+        return res.status(400).json({
+          message: 'Cada partido requiere equipo1 y equipo2',
+        });
+      }
+    }
+
+    const doc = await FixtureFecha.create({
+      numeroFecha: num,
+      titulo,
+      fechaCabecera: parseDateOrNull(fechaCabecera),
+      partidos: partidosNorm,
+    });
+
+    // ✅ forma correcta de hacer populate en cadena
+    await doc.populate([
+      { path: 'partidos.equipo1', select: 'nombre' },
+      { path: 'partidos.equipo2', select: 'nombre' },
+    ]);
+
+    res.status(201).json(doc);
+  } catch (e) {
+    console.error('Error creando fecha fixture:', e);
+    res.status(500).json({ message: 'Error creando fecha fixture', detail: e.message });
+  }
+});
+
+
+
+
+
+// Admin: actualizar una fecha existente (por _id)
+app.put('/api/fixture/:id', basicAuth, async (req, res) => {
+  try {
+    const { id } = req.params;
+    const { numeroFecha, titulo, fechaCabecera, partidos } = req.body;
+
+    const fecha = await FixtureFecha.findById(id);
+    if (!fecha) return res.status(404).json({ message: 'Fecha no encontrada' });
+
+    // numeroFecha (opcional)
+    if (numeroFecha !== undefined) {
+      const num = Number(numeroFecha);
+      if (isNaN(num) || num <= 0) {
+        return res.status(400).json({ message: 'numeroFecha debe ser un número positivo' });
+      }
+      const dup = await FixtureFecha.findOne({ numeroFecha: num, _id: { $ne: fecha._id } });
+      if (dup) {
+        return res.status(400).json({ message: 'Ya existe otra fecha con ese número' });
+      }
+      fecha.numeroFecha = num;
+    }
+
+    // título (opcional)
+    if (titulo !== undefined) {
+      fecha.titulo = titulo;
+    }
+
+    // fechaCabecera (opcional, se puede ir a null)
+    if (fechaCabecera !== undefined) {
+      fecha.fechaCabecera = parseDateOrNull(fechaCabecera);
+    }
+
+    // partidos (opcional)
+    if (Array.isArray(partidos)) {
+      const partidosNorm = [];
+
+      for (const p of partidos) {
+        // equipo1 y equipo2 son obligatorios
+        if (!p.equipo1 || !p.equipo2) {
+          return res.status(400).json({
+            message: 'Cada partido requiere al menos equipo1 y equipo2',
+          });
+        }
+
+        // fechaPartido es OPCIONAL
+        let fechaPartido = null;
+        if (p.fechaPartido) {
+          const parsed = parseDateOrNull(p.fechaPartido);
+          if (!parsed) {
+            return res.status(400).json({
+              message: 'Hay una fecha de partido inválida. Usa un formato válido (YYYY-MM-DD, etc.)',
+            });
+          }
+          fechaPartido = parsed;
+        }
+
+        partidosNorm.push({
+          equipo1: p.equipo1,
+          equipo2: p.equipo2,
+          fechaPartido, // puede quedar null
+          valor_adicional_eq1: Array.isArray(p.valor_adicional_eq1) ? p.valor_adicional_eq1 : [],
+          valor_adicional_eq2: Array.isArray(p.valor_adicional_eq2) ? p.valor_adicional_eq2 : [],
+        });
+      }
+
+      fecha.partidos = partidosNorm;
+    }
+
+    // guardamos cambios
+    await fecha.save();
+
+    // populamos nombres de equipos para devolver algo listo al frontend
+    await fecha.populate([
+      { path: 'partidos.equipo1', select: 'nombre' },
+      { path: 'partidos.equipo2', select: 'nombre' },
+    ]);
+
+    res.json(fecha);
+  } catch (e) {
+    console.error('Error actualizando fecha fixture:', e);
+    res.status(500).json({ message: 'Error actualizando fecha', detail: e.message });
+  }
+});
+
+
+
+
+// Admin: eliminar una fecha completa
+app.delete('/api/fixture/:id', basicAuth, async (req, res) => {
+  try {
+    const { id } = req.params;
+    const deleted = await FixtureFecha.findByIdAndDelete(id);
+    if (!deleted) return res.status(404).json({ message: 'Fecha no encontrada' });
+    res.json({ message: 'Fecha eliminada' });
+  } catch (e) {
+    console.error('Error eliminando fecha fixture:', e);
+    res.status(500).json({ message: 'Error eliminando fecha', detail: e.message });
+  }
+});
+
+
 
 
 
