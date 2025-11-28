@@ -111,6 +111,810 @@ function drawHeader(doc) {
   return lineY + 12;
 }
 
+// Helper para rellenar hasta 20 filas
+function padJugadores(jugadores) {
+  const arr = [...jugadores];
+  while (arr.length < 20) {
+    arr.push(null);
+  }
+  return arr.slice(0, 20);
+}
+
+// =============================
+// HOJA DE VOCALÍA - Helpers PDF
+// =============================
+
+// Dibuja encabezado específico para Hoja de Vocalía
+function drawVocaliaHeader(doc, { tituloExtra = '' } = {}) {
+  const marginLeft  = doc.page.margins.left;
+  const marginRight = doc.page.width - doc.page.margins.right;
+  const contentW    = marginRight - marginLeft;
+
+  const logoW = LOGO_BUFFER ? 42 : 0;
+  const yTop  = doc.page.margins.top - 10;
+
+  if (LOGO_BUFFER) {
+    doc.image(LOGO_BUFFER, marginLeft, yTop, { width: logoW });
+  }
+
+  const textX = marginLeft + (logoW ? logoW + 10 : 0);
+  const textW = contentW - (logoW ? logoW + 10 : 0);
+
+  doc
+    .font('Helvetica-Bold')
+    .fontSize(12)
+    .fillColor(COLOR_PRIMARY)
+    .text('Liga Deportiva Bienestar Familiar de Calderón', textX, yTop, {
+      width: textW,
+      align: 'center',
+    });
+
+  doc
+    .font('Helvetica')
+    .fontSize(9)
+    .fillColor(COLOR_TEXT)
+    .text('6º Campeonato de indorfútbol masculino', textX, yTop + 16, {
+      width: textW,
+      align: 'center',
+    });
+
+  doc
+    .font('Helvetica-Bold')
+    .fontSize(12)
+    .fillColor(COLOR_SECOND)
+    .text('HOJA DE VOCALÍA', textX, yTop + 32, {
+      width: textW,
+      align: 'center',
+    });
+
+  if (tituloExtra) {
+    doc
+      .font('Helvetica')
+      .fontSize(10)
+      .fillColor(COLOR_TEXT)
+      .text(tituloExtra, textX, yTop + 48, {
+        width: textW,
+        align: 'center',
+      });
+  }
+
+  const lineY = yTop + 64;
+  doc
+    .moveTo(marginLeft, lineY)
+    .lineTo(marginRight, lineY)
+    .strokeColor('#d0d0d0')
+    .lineWidth(0.8)
+    .stroke();
+
+  return lineY + 8; // Y donde empieza el resto del contenido
+}
+// Recuadro de VOCALÍA + BALÓN ASIGNADO colocado bajo el nombre del equipo
+function drawVocaliaBox(doc, { x, y, width }) {
+  const col1 = width * 0.35;
+  const col2 = width * 0.30;
+  const col3 = width - col1 - col2;
+
+  const headerH     = 16;
+  const rowHNormal  = 14;  // filas vacías
+  const rowHBalon   = 28;  // ⬅️ SOLO BALÓN ASIGNADO (más alto)
+
+  const totalH = headerH + rowHNormal * 2 + rowHBalon;
+
+  const BORDER_OUT   = '#999';
+  const BORDER_INNER = '#e0e0e0';
+
+  // ===== MARCO GENERAL =====
+  doc.rect(x, y, width, totalH)
+    .strokeColor(BORDER_OUT)
+    .lineWidth(0.6)
+    .stroke();
+
+  // ===== CABECERA =====
+  doc.rect(x, y, width, headerH).fill('#f2f2f2');
+
+  doc.font('Helvetica-Bold').fontSize(10).fillColor('#000');
+  doc.text('VOCALIA', x, y + 3, { width: col1, align: 'center' });
+  doc.text('15.00',   x + col1, y + 3, { width: col2, align: 'center' });
+  doc.text('TOTAL',   x + col1 + col2, y + 3, { width: col3, align: 'center' });
+
+  const x2 = x + col1;
+  const x3 = x + col1 + col2;
+
+  // ===== LÍNEA BAJO CABECERA =====
+  let yCursor = y + headerH;
+  doc.moveTo(x, yCursor).lineTo(x + width, yCursor)
+    .strokeColor(BORDER_INNER).lineWidth(0.5).stroke();
+
+  // ===== FILA 1 =====
+  yCursor += rowHNormal;
+  doc.moveTo(x, yCursor).lineTo(x3, yCursor) // sin cortar TOTAL
+    .strokeColor(BORDER_INNER).lineWidth(0.5).stroke();
+
+  // ===== FILA 2 =====
+  yCursor += rowHNormal;
+  doc.moveTo(x, yCursor).lineTo(x3, yCursor)
+    .strokeColor(BORDER_INNER).lineWidth(0.5).stroke();
+
+  // ===== LÍNEAS VERTICALES =====
+  doc.moveTo(x2, y).lineTo(x2, y + totalH)
+    .strokeColor(BORDER_INNER).lineWidth(0.5).stroke();
+
+  doc.moveTo(x3, y).lineTo(x3, y + totalH)
+    .strokeColor(BORDER_INNER).lineWidth(0.5).stroke();
+
+  // ===== TEXTO BALÓN ASIGNADO (centrado perfecto) =====
+  const balonTop = y + headerH + rowHNormal * 2;
+
+  doc.font('Helvetica-Bold').fontSize(10);
+  doc.text(
+    'BALÓN\nASIGNADO',
+    x + 2,
+    balonTop + 6,        // ⬅️ centra verticalmente
+    {
+      width: col1 - 4,
+      align: 'center',
+      lineBreak: true,
+    }
+  );
+
+  return totalH;
+}
+
+
+
+
+
+// Tabla de jugadores por equipo (20 filas) – lado izquierdo o derecho
+// Tabla de jugadores por equipo (20 filas) – lado izquierdo o derecho
+// Tabla de jugadores por equipo (20 filas) – lado izquierdo o derecho
+function drawJugadoresTable(doc, {
+  x,
+  y,
+  width,
+  jugadores, // array de hasta 20 (puede tener nulls)
+}) {
+  const headerH   = 24;
+  const rowH      = 16;
+  const totalRows = 20;
+
+  const numW    = 16;
+  const numJugW = 38;
+  const extraW  = 18;
+  const smallW  = 20;
+  const gap     = 3;
+
+  const nombreW = width - (
+    numW + numJugW + extraW + smallW * 3 + gap * 6
+  );
+
+  const cols = [numW, nombreW, numJugW, extraW, smallW, smallW, smallW];
+
+  // ==== Encabezado ====
+  doc.save();
+  doc.rect(x, y, width, headerH).fill('#f2f2f2');
+  doc.fillColor('#000').font('Helvetica-Bold').fontSize(7);
+
+  let cx = x + gap;
+  doc.text('N°', cx, y + 6, { width: numW, align: 'center' });
+  cx += numW + gap;
+
+  doc.text('NOMBRES COMPLETOS\nJUGADOR', cx, y + 4, {
+    width: nombreW,
+    align: 'center',
+    lineBreak: true,
+  });
+  cx += nombreW + gap;
+
+  doc.text('No.\nJUGADOR', cx, y + 4, {
+    width: numJugW,
+    align: 'center',
+    lineBreak: true,
+  });
+  cx += numJugW + gap;
+
+  // columna extra sin título
+  cx += extraW + gap;
+
+  doc.text('G',  cx,           y + 6, { width: smallW, align: 'center' });
+  cx += smallW + gap;
+  doc.text('TA', cx,           y + 6, { width: smallW, align: 'center' });
+  cx += smallW + gap;
+  doc.text('TR', cx,           y + 6, { width: smallW, align: 'center' });
+
+  doc.restore();
+  doc.rect(x, y, width, headerH).strokeColor('#999').lineWidth(0.6).stroke();
+
+  // verticales encabezado
+  let vX = x;
+  const headerBottom = y + headerH;
+  for (let i = 0; i < cols.length - 1; i++) {
+    vX += cols[i] + gap;
+    doc.moveTo(vX, y).lineTo(vX, headerBottom)
+      .strokeColor('#c0c0c0').lineWidth(0.5).stroke();
+  }
+
+  // ==== Filas de jugadores ====
+  let curY = y + headerH;
+  doc.font('Helvetica').fontSize(7).fillColor('#000');
+
+  for (let i = 0; i < totalRows; i++) {
+    const jug = jugadores[i] || null;
+    let cx2 = x + gap;
+
+    // Nº de fila
+    doc.text(String(i + 1), cx2, curY + 3, { width: numW, align: 'center' });
+    cx2 += numW + gap;
+
+    if (jug) {
+      const nombreCompleto = `${(jug.lastName || '').toUpperCase()} ${(jug.firstName || '').toUpperCase()}`.trim();
+      doc.text(nombreCompleto, cx2, curY + 2, {
+        width: nombreW,
+        align: 'left',
+        lineBreak: true,
+      });
+      cx2 += nombreW + gap;
+
+      const numJugador = jug.numjugador != null ? String(jug.numjugador) : '';
+      doc.text(numJugador, cx2, curY + 3, { width: numJugW, align: 'center' });
+      cx2 += numJugW + gap;
+    } else {
+      doc.text('', cx2, curY + 3, { width: nombreW });
+      cx2 += nombreW + gap;
+      doc.text('', cx2, curY + 3, { width: numJugW });
+      cx2 += numJugW + gap;
+    }
+
+    // columna extra vacía
+    cx2 += extraW + gap;
+
+    // G / TA / TR vacíos
+    doc.text('', cx2, curY + 3, { width: smallW }); cx2 += smallW + gap;
+    doc.text('', cx2, curY + 3, { width: smallW }); cx2 += smallW + gap;
+    doc.text('', cx2, curY + 3, { width: smallW });
+
+    // verticales de la fila
+    let colX = x;
+    for (let k = 0; k < cols.length - 1; k++) {
+      colX += cols[k] + gap;
+      doc.moveTo(colX, curY).lineTo(colX, curY + rowH)
+        .strokeColor('#e0e0e0').lineWidth(0.4).stroke();
+    }
+
+    // horizontal bajo la fila
+    doc.moveTo(x, curY + rowH).lineTo(x + width, curY + rowH)
+      .strokeColor('#e0e0e0').lineWidth(0.5).stroke();
+
+    curY += rowH;
+  }
+
+  // ==== Fila TOTAL N° ====
+  const totalRowTop = curY;
+  const totalH = headerH + rowH * (totalRows + 1);
+
+  // verticales de la fila TOTAL:
+  // saltamos SOLO la primera división (entre N° y NOMBRES)
+  let colXTot = x;
+  for (let k = 0; k < cols.length - 1; k++) {
+    colXTot += cols[k] + gap;
+    if (k === 0) continue; // ← que TOTAL N° abarque N° + nombres
+    doc.moveTo(colXTot, totalRowTop).lineTo(colXTot, totalRowTop + rowH)
+      .strokeColor('#e0e0e0').lineWidth(0.4).stroke();
+  }
+
+  // texto TOTAL N°
+  doc.font('Helvetica-Bold').fontSize(8).fillColor('#000');
+  const bloqueTotalW = numW + gap + nombreW;
+  doc.text('TOTAL N°', x + 4, totalRowTop + 4, {
+    width: bloqueTotalW - 8,
+    align: 'left',
+  });
+
+  // borde externo completo
+  doc.rect(x, y, width, totalH).strokeColor('#999').lineWidth(0.6).stroke();
+
+  return y + totalH;
+}
+
+
+
+// Tabla de cambios: INGRESA / (col vacía) / SALE  |  INGRESA / (col vacía) / SALE
+function drawCambiosTable(doc, { x, y, width }) {
+  const headerH = 16;
+  const rowH    = 16;
+  const rows    = 4;
+  const totalH  = headerH + rowH * rows;
+
+  const colCount = 6;              // INGRESA | vacío | SALE | INGRESA | vacío | SALE
+  const colW     = width / colCount;
+
+  const BORDER_OUT   = '#999';
+  const BORDER_INNER = '#e0e0e0';
+
+  // Marco general
+  doc.rect(x, y, width, totalH)
+    .strokeColor(BORDER_OUT)
+    .lineWidth(0.6)
+    .stroke();
+
+  // Cabecera gris
+  doc.rect(x, y, width, headerH)
+    .fill('#f2f2f2');
+
+  // Cabeceras
+  const headers = ['INGRESA', '', 'SALE', 'INGRESA', '', 'SALE'];
+  doc.font('Helvetica-Bold').fontSize(9).fillColor('#000');
+
+  headers.forEach((h, i) => {
+    if (h) {
+      doc.text(h, x + colW * i, y + 3, { width: colW, align: 'center' });
+    }
+  });
+
+  // Línea horizontal bajo cabecera
+  const headerBottom = y + headerH;
+  doc.moveTo(x, headerBottom).lineTo(x + width, headerBottom)
+    .strokeColor(BORDER_INNER)
+    .lineWidth(0.5)
+    .stroke();
+
+  // Líneas horizontales de filas
+  for (let r = 1; r <= rows; r++) {
+    const yy = y + headerH + rowH * r;
+    if (yy < y + totalH) {
+      doc.moveTo(x, yy).lineTo(x + width, yy)
+        .strokeColor(BORDER_INNER)
+        .lineWidth(0.5)
+        .stroke();
+    }
+  }
+
+  // Líneas verticales (6 columnas)
+  for (let i = 1; i < colCount; i++) {
+    const xx = x + colW * i;
+    doc.moveTo(xx, y).lineTo(xx, y + totalH)
+      .strokeColor(BORDER_INNER)
+      .lineWidth(0.5)
+      .stroke();
+  }
+
+  // Filas: texto "POR N°" en la 2ª y 5ª columna (las columnas sin encabezado)
+  doc.font('Helvetica').fontSize(9).fillColor('#000');
+  for (let r = 0; r < rows; r++) {
+    const baseY = y + headerH + rowH * r + 3;
+
+    // Columna 2 (índice 1)
+    doc.text('POR N°', x + colW * 1, baseY, {
+      width: colW,
+      align: 'center',
+    });
+
+    // Columna 5 (índice 4)
+    doc.text('POR N°', x + colW * 4, baseY, {
+      width: colW,
+      align: 'center',
+    });
+  }
+
+  return totalH;
+}
+
+
+
+
+// PÁGINA 1 – Frente de hoja de vocalía
+// PÁGINA 1 – Frente de hoja de vocalía
+function drawVocaliaFront(doc, {
+  fechaPartido,
+  nombreEq1,
+  nombreEq2,
+  lista1,
+  lista2,
+}) {
+  drawWatermark(doc);
+
+  const marginLeft  = doc.page.margins.left;
+  const marginRight = doc.page.width - doc.page.margins.right;
+  const contentW    = marginRight - marginLeft;
+
+  let y = drawVocaliaHeader(doc);
+
+  // ===== fila de datos generales (FECHA, HORARIO, FASE, BLANCO, EQUIPO VOCAL) =====
+  const infoH     = 28;
+  const base = contentW * 0.25;
+
+  const colWidths = [
+    base,        // 0 - FECHA DEL PARTIDO
+    base,        // 1 - HORARIO
+    base / 2,    // 2 - FASE
+    base / 2,    // 3 - columna en blanco
+    base,        // 4 - EQUIPO VOCAL
+  ];
+
+  let xInfo = marginLeft;
+  doc.font('Helvetica-Bold').fontSize(7).fillColor('#000');
+
+  // FECHA PARTIDO
+  doc.rect(xInfo, y, colWidths[0], infoH).strokeColor('#999').lineWidth(0.6).stroke();
+  doc.text('FECHA DEL PARTIDO', xInfo + 3, y + 3);
+  doc.font('Helvetica').fontSize(9);
+  const fechaStr = fechaPartido ? new Date(fechaPartido).toLocaleDateString('es-EC') : '';
+  doc.text(fechaStr, xInfo + 3, y + 12, { width: colWidths[0] - 6 });
+  doc.font('Helvetica-Bold').fontSize(7);
+  xInfo += colWidths[0];
+
+  // HORARIO
+  doc.rect(xInfo, y, colWidths[1], infoH).strokeColor('#999').lineWidth(0.6).stroke();
+  doc.text('HORARIO', xInfo + 3, y + 3);
+  xInfo += colWidths[1];
+
+  // FASE
+  doc.rect(xInfo, y, colWidths[2], infoH).strokeColor('#999').lineWidth(0.6).stroke();
+  doc.text('FASE', xInfo + 3, y + 3);
+  xInfo += colWidths[2];
+
+  // COLUMNA EN BLANCO (solo divisoria)
+  doc.rect(xInfo, y, colWidths[3], infoH).strokeColor('#999').lineWidth(0.6).stroke();
+  // sin texto
+  xInfo += colWidths[3];
+
+  // EQUIPO VOCAL
+  doc.rect(xInfo, y, colWidths[4], infoH).strokeColor('#999').lineWidth(0.6).stroke();
+  doc.text('EQUIPO VOCAL', xInfo + 3, y + 3);
+
+  y += infoH + 10;
+
+  // ===== Títulos de equipo =====
+  const gapCols = 10;
+  const halfW   = (contentW - gapCols) / 2;
+  const leftX   = marginLeft;
+  const rightX  = marginLeft + halfW + gapCols;
+
+  doc.font('Helvetica-Bold').fontSize(12).fillColor('#000');
+  doc.text(`NOMBRE EQUIPO: ${nombreEq1}`, leftX, y, { width: halfW });
+  doc.text(`NOMBRE EQUIPO: ${nombreEq2}`, rightX, y, { width: halfW });
+
+  y += 14;
+
+  // ===== Recuadro de VOCALÍA bajo cada nombre =====
+  const boxHLeft  = drawVocaliaBox(doc, { x: leftX,  y, width: halfW });
+  const boxHRight = drawVocaliaBox(doc, { x: rightX, y, width: halfW });
+
+  const afterBoxesY = y + Math.max(boxHLeft, boxHRight) + 8;
+
+  // ===== Tablas de jugadores =====
+  const bottomLeft  = drawJugadoresTable(doc, {
+    x: leftX,
+    y: afterBoxesY,
+    width: halfW,
+    jugadores: lista1,
+  });
+
+  const bottomRight = drawJugadoresTable(doc, {
+    x: rightX,
+    y: afterBoxesY,
+    width: halfW,
+    jugadores: lista2,
+  });
+
+  let yAfterPlayers = Math.max(bottomLeft, bottomRight) + 10;
+
+  // ===== Tabla de cambios por equipo =====
+  const cambiosHLeft  = drawCambiosTable(doc, { x: leftX,  y: yAfterPlayers, width: halfW });
+  const cambiosHRight = drawCambiosTable(doc, { x: rightX, y: yAfterPlayers, width: halfW });
+
+  const yAfterCambios = yAfterPlayers + Math.max(cambiosHLeft, cambiosHRight) + 80;
+
+  // ===== Firmas: CAPITÁN O DIRECTIVO =====
+  doc.font('Helvetica').fontSize(9).fillColor('#000');
+
+  doc.text('_________________________', leftX, yAfterCambios, {
+    width: halfW,
+    align: 'center',
+  });
+  doc.text('FIRMA CAPITÁN O DIRECTIVO', leftX, yAfterCambios + 12, {
+    width: halfW,
+    align: 'center',
+  });
+
+  doc.text('_________________________', rightX, yAfterCambios, {
+    width: halfW,
+    align: 'center',
+  });
+  doc.text('FIRMA CAPITÁN O DIRECTIVO', rightX, yAfterCambios + 12, {
+    width: halfW,
+    align: 'center',
+  });
+}
+
+
+function drawLinedBox(doc, { x, y, width, height, lineSpacing = 22 }) {
+  // Marco
+  doc.rect(x, y, width, height)
+    .strokeColor('#999')
+    .lineWidth(0.6)
+    .stroke();
+
+  // Líneas horizontales internas (más separadas para escribir mejor)
+  for (let yy = y + lineSpacing; yy < y + height; yy += lineSpacing) {
+    doc.moveTo(x + 4, yy)
+      .lineTo(x + width - 4, yy)
+      .strokeColor('#d0d0d0')
+      .lineWidth(0.4)
+      .stroke();
+  }
+}
+
+function drawValoresCalificacionBox(doc, { x, y, width }) {
+  const rowH   = 22;
+  const totalH = rowH * 3;          // 3 filas
+
+  // Anchos de columnas:
+  // 60% para VALORES RECIBIDOS (que luego se divide en EFECTIVO / TRANSFERENCIA)
+  // 40% para CALIFICACIÓN
+  const colValores = width * 0.60;
+  const colCalif   = width - colValores;
+
+  const colEf      = colValores / 2;      // EFECTIVO
+  const colTrans   = colValores - colEf;  // TRANSFERENCIA
+
+  const BORDER_OUT   = '#999';
+  const BORDER_INNER = '#e0e0e0';
+
+  const xEf    = x + colEf;       // división EFECTIVO / TRANSFERENCIA
+  const xCalif = x + colValores;  // división TRANSFERENCIA / CALIFICACIÓN
+
+  const midY1  = y + rowH;        // entre fila 1 y 2
+  const midY2  = y + rowH * 2;    // entre fila 2 y 3
+
+  // ==== Marco externo ====
+  doc.rect(x, y, width, totalH)
+    .strokeColor(BORDER_OUT)
+    .lineWidth(0.6)
+    .stroke();
+
+  // ==== Líneas verticales ====
+  // EFECTIVO / TRANSFERENCIA
+  doc.moveTo(xEf, midY1).lineTo(xEf, y + totalH)
+  .strokeColor(BORDER_INNER)
+  .lineWidth(0.5)
+  .stroke();
+
+  // TRANSFERENCIA / CALIFICACIÓN
+  doc.moveTo(xCalif, y).lineTo(xCalif, y + totalH)
+    .strokeColor(BORDER_INNER)
+    .lineWidth(0.5)
+    .stroke();
+
+  // ==== Líneas horizontales ====
+  // Entre encabezado (fila 1) y fila 2: recorre TODO
+  doc.moveTo(x, midY1).lineTo(x + width, midY1)
+    .strokeColor(BORDER_INNER)
+    .lineWidth(0.5)
+    .stroke();
+
+  // Entre fila 2 y 3: SOLO bajo EFECTIVO/TRANSFERENCIA,
+  // para que la parte de CALIFICACIÓN quede como un solo cuadro alto.
+  doc.moveTo(x, midY2).lineTo(x + colValores, midY2)
+    .strokeColor(BORDER_INNER)
+    .lineWidth(0.5)
+    .stroke();
+
+  // ==== Textos ====
+  doc.font('Helvetica-Bold').fontSize(9).fillColor('#000');
+
+  // Fila 1: VALORES RECIBIDOS (ocupa EFECTIVO+TRANSFERENCIA)
+  doc.text(
+    'VALORES RECIBIDOS',
+    x + 4,
+    y + 4,
+    {
+      width: colValores - 8,
+      align: 'center',
+    }
+  );
+
+  // Fila 1: CALIFICACIÓN ARBITRAL
+  doc.text(
+    'CALIFICACIÓN ARBITRAL DEL 1 - 10',
+    xCalif + 4,
+    y + 4,
+    {
+      width: colCalif - 8,
+      align: 'center',
+    }
+  );
+
+  // Fila 2: EFECTIVO
+  doc.text(
+    'EFECTIVO',
+    x + 4,
+    midY1 + 4,
+    {
+      width: colEf - 8,
+      align: 'center',
+    }
+  );
+
+  // Fila 2: TRANSFERENCIA
+  doc.text(
+    'TRANSFERENCIA',
+    xEf + 4,
+    midY1 + 4,
+    {
+      width: colTrans - 8,
+      align: 'center',
+    }
+  );
+
+  // Fila 3 se queda vacía (EFECTIVO / TRANSFERENCIA para escribir montos)
+  // La parte de CALIFICACIÓN también queda vacía, pero como un solo cuadro grande.
+
+  return totalH;
+}
+
+
+
+
+
+// PÁGINA 2 – Reverso (informe)
+function drawVocaliaBack(doc) {
+  const marginLeft  = doc.page.margins.left;
+  const marginRight = doc.page.width - doc.page.margins.right;
+  const contentW    = marginRight - marginLeft;
+
+  // Sólo marca de agua, SIN encabezado institucional
+  drawWatermark(doc);
+
+  let y = doc.page.margins.top;
+
+  doc.font('Helvetica-Bold').fontSize(10).fillColor('#000');
+
+  const boxH = 130;
+  const gapY = 18;
+
+  // 1) INFORME ARBITRAL
+  doc.text('INFORME ARBITRAL:', marginLeft, y);
+  y += 10;
+  drawLinedBox(doc, { x: marginLeft, y, width: contentW, height: boxH });
+  y += boxH + gapY;
+
+  // Firmas árbitro
+  const colWArb  = contentW / 3;
+  const baseYArb = y+30;
+  doc
+    .font('Helvetica')
+    .fontSize(9)
+    .text('_________________________', marginLeft, baseYArb, {
+      width: colWArb,
+      align: 'center',
+    })
+    .text('NOMBRE ARBITRO', marginLeft, baseYArb + 14, {
+      width: colWArb,
+      align: 'center',
+    });
+  doc
+    .text('_________________________', marginLeft + 2 * colWArb, baseYArb, {
+      width: colWArb,
+      align: 'center',
+    })
+    .text('FIRMA ARBITRO', marginLeft + 2 * colWArb, baseYArb + 14, {
+      width: colWArb,
+      align: 'center',
+    });
+
+  y = baseYArb + 40;
+
+  // 2) INFORME VOCAL
+  doc.font('Helvetica-Bold').fontSize(10).fillColor('#000');
+  doc.text('INFORME VOCAL:', marginLeft, y);
+  y += 10;
+  drawLinedBox(doc, { x: marginLeft, y, width: contentW, height: boxH });
+  y += boxH + 8;
+
+  // Cuadro extra: VALORES RECIBIDOS + CALIFICACIÓN ARBITRAL
+  const extraH = drawValoresCalificacionBox(doc, {
+    x: marginLeft,
+    y,
+    width: contentW,
+  });
+  y += extraH + gapY;
+
+  // Firmas Vocal
+  const colWVoc  = contentW / 3;
+  const baseYVoc = y+30;
+  doc
+    .font('Helvetica')
+    .fontSize(9)
+    .text('_________________________', marginLeft, baseYVoc, {
+      width: colWVoc,
+      align: 'center',
+    })
+    .text('NOMBRE VOCAL', marginLeft, baseYVoc + 14, {
+      width: colWVoc,
+      align: 'center',
+    });
+  doc
+    .text('_________________________', marginLeft + 2 * colWVoc, baseYVoc, {
+      width: colWVoc,
+      align: 'center',
+    })
+    .text('FIRMA VOCAL', marginLeft + 2 * colWVoc, baseYVoc + 14, {
+      width: colWVoc,
+      align: 'center',
+    });
+
+  y = baseYVoc + 40;
+
+  // 3) SANCIONES TRIBUNAL DE PENAS
+  doc.font('Helvetica-Bold').fontSize(10).fillColor('#000');
+  doc.text('SANCIONES TRIBUNAL DE PENAS:', marginLeft, y);
+  y += 10;
+  drawLinedBox(doc, { x: marginLeft, y, width: contentW, height: boxH });
+  y += boxH + 2 * gapY;
+
+  // Firmas finales
+  const colW  = contentW / 3;
+  const baseY = y + 25;
+
+  doc
+    .font('Helvetica')
+    .fontSize(9)
+    .text('_________________________', marginLeft, baseY, {
+      width: colW,
+      align: 'center',
+    })
+    .text('PRESIDENTE TRIBUNAL DE PENAS', marginLeft, baseY + 14, {
+      width: colW,
+      align: 'center',
+    });
+
+  doc
+    .text('_________________________', marginLeft + colW, baseY, {
+      width: colW,
+      align: 'center',
+    })
+    .text('ELIO ESPINOZA', marginLeft + colW, baseY + 14, {
+      width: colW,
+      align: 'center',
+    })
+    .text('PRESIDENTE LIGA BIENESTAR', marginLeft + colW, baseY + 28, {
+      width: colW,
+      align: 'center',
+    });
+
+  doc
+    .text('_________________________', marginLeft + 2 * colW, baseY, {
+      width: colW,
+      align: 'center',
+    })
+    .text('ESTEFANY VALENCIA', marginLeft + 2 * colW, baseY + 14, {
+      width: colW,
+      align: 'center',
+    })
+    .text('SECRETARIA', marginLeft + 2 * colW, baseY + 28, {
+      width: colW,
+      align: 'center',
+    });
+}
+
+
+
+// Renderiza una hoja completa (frente + reverso) para un partido
+function renderHojaVocalia(doc, {
+  fechaPartido,
+  nombreEq1,
+  nombreEq2,
+  lista1,
+  lista2,
+}) {
+  // Se asume que la página actual está nueva para el frente:
+  drawVocaliaFront(doc, { fechaPartido, nombreEq1, nombreEq2, lista1, lista2 });
+
+  // Reverso
+  doc.addPage();
+  drawVocaliaBack(doc);
+}
+
 
 
 dayjs.extend(customParseFormat);
@@ -715,6 +1519,142 @@ app.get('/api/admin/autorizaciones/consolidado', basicAuth, async (req, res) => 
   }
 });
 
+// 👉 Nueva ruta: hoja de vocalía por partido (2 páginas)
+app.get('/api/fixture/hoja-vocalia/:idFecha/:idxPartido', basicAuth, async (req, res) => {
+  try {
+    const { idFecha, idxPartido } = req.params;
+    const index = Number(idxPartido);
+
+    if (Number.isNaN(index) || index < 0) {
+      return res.status(400).json({ message: 'Índice de partido inválido' });
+    }
+
+    const fecha = await FixtureFecha.findById(idFecha)
+      .populate([
+        { path: 'partidos.equipo1', select: 'nombre' },
+        { path: 'partidos.equipo2', select: 'nombre' },
+      ])
+      .lean();
+
+    if (!fecha) {
+      return res.status(404).json({ message: 'Fecha no encontrada' });
+    }
+
+    const partido = fecha.partidos?.[index];
+    if (!partido) {
+      return res.status(404).json({ message: 'Partido no encontrado en esta fecha' });
+    }
+
+    const nombreEq1 = partido.equipo1?.nombre || 'EQUIPO 1';
+    const nombreEq2 = partido.equipo2?.nombre || 'EQUIPO 2';
+    const fechaPartido = partido.fechaPartido || fecha.fechaCabecera || null;
+
+    // Jugadores por equipo
+    const jugadoresEq1 = await User.find({ team: nombreEq1 })
+      .sort({ lastName: 1, firstName: 1 })
+      .lean();
+    const jugadoresEq2 = await User.find({ team: nombreEq2 })
+      .sort({ lastName: 1, firstName: 1 })
+      .lean();
+
+    const lista1 = padJugadores(jugadoresEq1);
+    const lista2 = padJugadores(jugadoresEq2);
+
+    res.status(200);
+    res.setHeader('Content-Type', 'application/pdf');
+    res.setHeader(
+      'Content-Disposition',
+      `attachment; filename="Hoja_vocalia_${nombreEq1}_vs_${nombreEq2}.pdf"`
+    );
+    res.setHeader('Cache-Control', 'no-store');
+
+    const doc = new PDFDocument({
+      size: 'A4',
+      margins: { top: 40, left: 30, right: 30, bottom: 30 },
+    });
+    doc.pipe(res);
+
+    renderHojaVocalia(doc, { fechaPartido, nombreEq1, nombreEq2, lista1, lista2 });
+
+    doc.end();
+  } catch (e) {
+    console.error('Error creando hoja de vocalia:', e);
+    return res.status(500).json({
+      message: 'Error creando hoja de vocalia',
+      detail: e.message,
+    });
+  }
+});
+
+
+// 👉 Todas las hojas de vocalía de una fecha (todas los partidos)
+app.get('/api/fixture/hojas-vocalia/:idFecha', basicAuth, async (req, res) => {
+  try {
+    const { idFecha } = req.params;
+
+    const fecha = await FixtureFecha.findById(idFecha)
+      .populate([
+        { path: 'partidos.equipo1', select: 'nombre' },
+        { path: 'partidos.equipo2', select: 'nombre' },
+      ])
+      .lean();
+
+    if (!fecha) {
+      return res.status(404).json({ message: 'Fecha no encontrada' });
+    }
+
+    const partidos = fecha.partidos || [];
+    if (!partidos.length) {
+      return res.status(400).json({ message: 'Esta fecha no tiene partidos cargados' });
+    }
+
+    res.status(200);
+    res.setHeader('Content-Type', 'application/pdf');
+    res.setHeader(
+      'Content-Disposition',
+      `attachment; filename="Hojas_vocalia_fecha_${fecha.numeroFecha}.pdf"`
+    );
+    res.setHeader('Cache-Control', 'no-store');
+
+    const doc = new PDFDocument({
+      size: 'A4',
+      margins: { top: 40, left: 30, right: 30, bottom: 30 },
+    });
+    doc.pipe(res);
+
+    for (let i = 0; i < partidos.length; i++) {
+      const p = partidos[i];
+      const nombreEq1 = p.equipo1?.nombre || 'EQUIPO 1';
+      const nombreEq2 = p.equipo2?.nombre || 'EQUIPO 2';
+      const fechaPartido = p.fechaPartido || fecha.fechaCabecera || null;
+
+      const jugadoresEq1 = await User.find({ team: nombreEq1 })
+        .sort({ lastName: 1, firstName: 1 })
+        .lean();
+      const jugadoresEq2 = await User.find({ team: nombreEq2 })
+        .sort({ lastName: 1, firstName: 1 })
+        .lean();
+
+      const lista1 = padJugadores(jugadoresEq1);
+      const lista2 = padJugadores(jugadoresEq2);
+
+      if (i > 0) {
+        // nueva página para siguiente partido (front)
+        doc.addPage();
+      }
+
+      renderHojaVocalia(doc, { fechaPartido, nombreEq1, nombreEq2, lista1, lista2 });
+    }
+
+    doc.end();
+  } catch (e) {
+    console.error('Error creando hojas de vocalia:', e);
+    return res.status(500).json({
+      message: 'Error creando hojas de vocalia',
+      detail: e.message,
+    });
+  }
+});
 
 
 app.get('/api/fixture', async (req, res) => {
