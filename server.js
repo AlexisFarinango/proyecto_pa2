@@ -39,6 +39,12 @@ const {
 const COLOR_PRIMARY = '#c62828'; // rojo del escudo
 const COLOR_SECOND  = '#0b2a6d'; // azul del balón
 const COLOR_TEXT    = '#222';
+// ===== Bordes / líneas (más oscuras) =====
+const BORDER_OUT   = '#777';  // antes '#999'  -> más contraste (marcos)
+const BORDER_INNER = '#c4c4c4'; // antes '#e0e0e0' -> líneas internas
+const BORDER_LIGHT = '#bdbdbd'; // antes '#d0d0d0' -> separadores suaves
+const LINE_NOTE    = '#b5b5b5'; // antes '#d0d0d0'/'#d9d9d9' -> líneas para escribir
+
 
 function parseDateOrNull(value) {
   if (!value) return null;
@@ -195,13 +201,11 @@ function drawVocaliaBox(doc, { x, y, width }) {
   const col3 = width - col1 - col2;
 
   const headerH     = 16;
-  const rowHNormal  = 14;  // filas vacías
-  const rowHBalon   = 28;  // ⬅️ SOLO BALÓN ASIGNADO (más alto)
+  const rowHNormal  = 23;  // filas vacías
+  const rowHBalon   = 17;  // ⬅️ SOLO BALÓN ASIGNADO (más alto)
 
   const totalH = headerH + rowHNormal * 2 + rowHBalon;
 
-  const BORDER_OUT   = '#999';
-  const BORDER_INNER = '#e0e0e0';
 
   // ===== MARCO GENERAL =====
   doc.rect(x, y, width, totalH)
@@ -245,9 +249,9 @@ function drawVocaliaBox(doc, { x, y, width }) {
   // ===== TEXTO BALÓN ASIGNADO (centrado perfecto) =====
   const balonTop = y + headerH + rowHNormal * 2;
 
-  doc.font('Helvetica-Bold').fontSize(10);
+  doc.font('Helvetica-Bold').fontSize(7);
   doc.text(
-    'BALÓN\nASIGNADO',
+    'BALÓN ASIGNADO',
     x + 2,
     balonTop + 6,        // ⬅️ centra verticalmente
     {
@@ -322,7 +326,7 @@ function drawJugadoresTable(doc, {
   doc.text('TR', cx,           y + 6, { width: smallW, align: 'center' });
 
   doc.restore();
-  doc.rect(x, y, width, headerH).strokeColor('#999').lineWidth(0.6).stroke();
+  doc.rect(x, y, width, headerH).strokeColor(BORDER_OUT).lineWidth(0.6).stroke();
 
   // verticales encabezado
   let vX = x;
@@ -330,7 +334,7 @@ function drawJugadoresTable(doc, {
   for (let i = 0; i < cols.length - 1; i++) {
     vX += cols[i] + gap;
     doc.moveTo(vX, y).lineTo(vX, headerBottom)
-      .strokeColor('#c0c0c0').lineWidth(0.5).stroke();
+      .strokeColor(BORDER_INNER).lineWidth(0.5).stroke();
   }
 
   // ==== Filas de jugadores ====
@@ -377,19 +381,27 @@ function drawJugadoresTable(doc, {
     for (let k = 0; k < cols.length - 1; k++) {
       colX += cols[k] + gap;
       doc.moveTo(colX, curY).lineTo(colX, curY + rowH)
-        .strokeColor('#e0e0e0').lineWidth(0.4).stroke();
+        .strokeColor(BORDER_INNER).lineWidth(0.4).stroke();
     }
 
     // horizontal bajo la fila
     doc.moveTo(x, curY + rowH).lineTo(x + width, curY + rowH)
-      .strokeColor('#e0e0e0').lineWidth(0.5).stroke();
+      .strokeColor(BORDER_INNER).lineWidth(0.5).stroke();
 
     curY += rowH;
   }
 
   // ==== Fila TOTAL N° ====
   const totalRowTop = curY;
-  const totalH = headerH + rowH * (totalRows + 1);
+  const rowHTotal = 22; // 👈 más alto (ajusta a gusto: 20, 22, 24, etc.)
+  const totalH = headerH + rowH * totalRows + rowHTotal;
+
+  // ===== Fondo gris fila TOTAL =====
+  doc.save();
+  doc.rect(x, totalRowTop, width, rowHTotal)
+    .fill('#f2f2f2'); // mismo gris que cabeceras
+  doc.restore();
+
 
   // verticales de la fila TOTAL:
   // saltamos SOLO la primera división (entre N° y NOMBRES)
@@ -397,20 +409,21 @@ function drawJugadoresTable(doc, {
   for (let k = 0; k < cols.length - 1; k++) {
     colXTot += cols[k] + gap;
     if (k === 0) continue; // ← que TOTAL N° abarque N° + nombres
-    doc.moveTo(colXTot, totalRowTop).lineTo(colXTot, totalRowTop + rowH)
-      .strokeColor('#e0e0e0').lineWidth(0.4).stroke();
+    doc.moveTo(colXTot, totalRowTop).lineTo(colXTot, totalRowTop + rowHTotal)
+      .strokeColor(BORDER_INNER).lineWidth(0.4).stroke();
   }
 
   // texto TOTAL N°
-  doc.font('Helvetica-Bold').fontSize(8).fillColor('#000');
+  doc.font('Helvetica-Bold').fontSize(12).fillColor('#000');
   const bloqueTotalW = numW + gap + nombreW;
-  doc.text('TOTAL N°', x + 4, totalRowTop + 4, {
-    width: bloqueTotalW - 8,
-    align: 'left',
+  const padRight = 6;
+  doc.text('TOTAL N°', x, totalRowTop + 4, {
+    width: bloqueTotalW - padRight,
+    align: 'right',
   });
 
   // borde externo completo
-  doc.rect(x, y, width, totalH).strokeColor('#999').lineWidth(0.6).stroke();
+  doc.rect(x, y, width, totalH).strokeColor(BORDER_OUT).lineWidth(0.6).stroke();
 
   return y + totalH;
 }
@@ -427,8 +440,6 @@ function drawCambiosTable(doc, { x, y, width }) {
   const colCount = 6;              // INGRESA | vacío | SALE | INGRESA | vacío | SALE
   const colW     = width / colCount;
 
-  const BORDER_OUT   = '#999';
-  const BORDER_INNER = '#e0e0e0';
 
   // Marco general
   doc.rect(x, y, width, totalH)
@@ -630,7 +641,7 @@ function drawVocaliaFront(doc, {
 function drawLinedBox(doc, { x, y, width, height, lineSpacing = 22 }) {
   // Marco
   doc.rect(x, y, width, height)
-    .strokeColor('#999')
+    .strokeColor(BORDER_OUT)
     .lineWidth(0.6)
     .stroke();
 
@@ -638,15 +649,18 @@ function drawLinedBox(doc, { x, y, width, height, lineSpacing = 22 }) {
   for (let yy = y + lineSpacing; yy < y + height; yy += lineSpacing) {
     doc.moveTo(x + 4, yy)
       .lineTo(x + width - 4, yy)
-      .strokeColor('#d0d0d0')
+      .strokeColor(LINE_NOTE)
       .lineWidth(0.4)
       .stroke();
   }
 }
 
 function drawValoresCalificacionBox(doc, { x, y, width }) {
-  const rowH   = 22;
-  const totalH = rowH * 3;          // 3 filas
+  const hTop    = 18;  // fila 1: VALORES RECIBIDOS / CALIFICACIÓN (más baja)
+  const hMid    = 14;  // fila 2: EFECTIVO / TRANSFERENCIA (más baja)
+  const hBottom = 34;  // fila 3: área para escribir (más alta)
+
+  const totalH = hTop + hMid + hBottom;
 
   // Anchos de columnas:
   // 60% para VALORES RECIBIDOS (que luego se divide en EFECTIVO / TRANSFERENCIA)
@@ -657,95 +671,138 @@ function drawValoresCalificacionBox(doc, { x, y, width }) {
   const colEf      = colValores / 2;      // EFECTIVO
   const colTrans   = colValores - colEf;  // TRANSFERENCIA
 
-  const BORDER_OUT   = '#999';
-  const BORDER_INNER = '#e0e0e0';
 
   const xEf    = x + colEf;       // división EFECTIVO / TRANSFERENCIA
   const xCalif = x + colValores;  // división TRANSFERENCIA / CALIFICACIÓN
 
-  const midY1  = y + rowH;        // entre fila 1 y 2
-  const midY2  = y + rowH * 2;    // entre fila 2 y 3
+  const midY1 = y + hTop;           // separa fila 1 y 2
+  const midY2 = y + hTop + hMid;    // separa fila 2 y 3
 
   // ==== Marco externo ====
   doc.rect(x, y, width, totalH)
     .strokeColor(BORDER_OUT)
-    .lineWidth(0.6)
+    .lineWidth(0.75)
     .stroke();
 
   // ==== Líneas verticales ====
   // EFECTIVO / TRANSFERENCIA
   doc.moveTo(xEf, midY1).lineTo(xEf, y + totalH)
   .strokeColor(BORDER_INNER)
-  .lineWidth(0.5)
+  .lineWidth(0.6)
   .stroke();
 
   // TRANSFERENCIA / CALIFICACIÓN
   doc.moveTo(xCalif, y).lineTo(xCalif, y + totalH)
     .strokeColor(BORDER_INNER)
-    .lineWidth(0.5)
+    .lineWidth(0.6)
     .stroke();
 
   // ==== Líneas horizontales ====
   // Entre encabezado (fila 1) y fila 2: recorre TODO
   doc.moveTo(x, midY1).lineTo(x + width, midY1)
     .strokeColor(BORDER_INNER)
-    .lineWidth(0.5)
+    .lineWidth(0.6)
     .stroke();
 
   // Entre fila 2 y 3: SOLO bajo EFECTIVO/TRANSFERENCIA,
   // para que la parte de CALIFICACIÓN quede como un solo cuadro alto.
   doc.moveTo(x, midY2).lineTo(x + colValores, midY2)
     .strokeColor(BORDER_INNER)
-    .lineWidth(0.5)
+    .lineWidth(0.6)
     .stroke();
 
-  // ==== Textos ====
-  doc.font('Helvetica-Bold').fontSize(9).fillColor('#000');
+    // ✅ Línea horizontal extra dentro de la fila 3 (solo VALORES)
+    // para crear la "fila faltante" (Equipo 1 / Equipo 2)
+    const hEquipoRow = 14; // altura de esa subfila (ajústala a gusto)
+    const yEquipoLine = midY2 + hEquipoRow;
 
-  // Fila 1: VALORES RECIBIDOS (ocupa EFECTIVO+TRANSFERENCIA)
-  doc.text(
-    'VALORES RECIBIDOS',
-    x + 4,
-    y + 4,
-    {
-      width: colValores - 8,
-      align: 'center',
-    }
-  );
+    doc.moveTo(x, yEquipoLine).lineTo(x + colValores, yEquipoLine)
+      .strokeColor(BORDER_INNER)
+      .lineWidth(0.6)
+      .stroke();
 
-  // Fila 1: CALIFICACIÓN ARBITRAL
-  doc.text(
-    'CALIFICACIÓN ARBITRAL DEL 1 - 10',
-    xCalif + 4,
-    y + 4,
-    {
-      width: colCalif - 8,
-      align: 'center',
-    }
-  );
 
-  // Fila 2: EFECTIVO
-  doc.text(
-    'EFECTIVO',
-    x + 4,
-    midY1 + 4,
-    {
-      width: colEf - 8,
-      align: 'center',
-    }
-  );
-
-  // Fila 2: TRANSFERENCIA
-  doc.text(
-    'TRANSFERENCIA',
-    xEf + 4,
-    midY1 + 4,
-    {
-      width: colTrans - 8,
-      align: 'center',
-    }
-  );
-
+    // =============================
+    // Divisiones internas abajo (solo en fila 3)
+    // =============================
+    const bottomTop = midY2;          // donde empieza el área de valores
+    const bottomEnd = y + totalH;     // donde termina el recuadro
+    
+    // EFECTIVO: 2 divisiones internas (3 columnas)
+    const efLeft = x;
+    const efRight = xEf;
+    const efW = efRight - efLeft;
+    
+    const efDiv1 = efLeft + efW / 2;
+    const efDiv2 = efLeft + (efW * 2) / 2;
+    
+    doc.moveTo(efDiv1, bottomTop).lineTo(efDiv1, bottomEnd)
+    .strokeColor(BORDER_INNER).lineWidth(0.5).stroke();
+    
+    doc.moveTo(efDiv2, bottomTop).lineTo(efDiv2, bottomEnd)
+    .strokeColor(BORDER_INNER).lineWidth(0.5).stroke();
+    
+    // TRANSFERENCIA: 2 divisiones internas (3 columnas)
+    const trLeft = xEf;
+    const trRight = xCalif;
+    const trW = trRight - trLeft;
+    
+    const trDiv1 = trLeft + trW / 2;
+    const trDiv2 = trLeft + (trW * 2) / 2;
+    
+    doc.moveTo(trDiv1, bottomTop).lineTo(trDiv1, bottomEnd)
+    .strokeColor(BORDER_INNER).lineWidth(0.6).stroke();
+    
+    doc.moveTo(trDiv2, bottomTop).lineTo(trDiv2, bottomEnd)
+    .strokeColor(BORDER_INNER).lineWidth(0.6).stroke();
+    
+    // ==== Textos ====
+    doc.font('Helvetica-Bold').fontSize(9).fillColor('#000');
+  
+    // Fila 1: VALORES RECIBIDOS (ocupa EFECTIVO+TRANSFERENCIA)
+    doc.text(
+      'VALORES RECIBIDOS',
+      x + 4,
+      y + 4,
+      {
+        width: colValores - 8,
+        align: 'center',
+      }
+    );
+  
+    // Fila 1: CALIFICACIÓN ARBITRAL
+    doc.text(
+      'CALIFICACIÓN ARBITRAL DEL 1 - 10',
+      xCalif + 4,
+      y + 4,
+      {
+        width: colCalif - 8,
+        align: 'center',
+      }
+    );
+  
+    // Fila 2: EFECTIVO
+    doc.text(
+      'EFECTIVO',
+      x + 4,
+      midY1 + 3,
+      {
+        width: colEf - 8,
+        align: 'center',
+      }
+    );
+  
+    // Fila 2: TRANSFERENCIA
+    doc.text(
+      'TRANSFERENCIA',
+      xEf + 4,
+      midY1 + 3,
+      {
+        width: colTrans - 8,
+        align: 'center',
+      }
+    );
+    
   // Fila 3 se queda vacía (EFECTIVO / TRANSFERENCIA para escribir montos)
   // La parte de CALIFICACIÓN también queda vacía, pero como un solo cuadro grande.
 
@@ -769,18 +826,19 @@ function drawVocaliaBack(doc) {
 
   doc.font('Helvetica-Bold').fontSize(10).fillColor('#000');
 
-  const boxH = 130;
+  const boxHInforme = 152;
+  const boxHSanciones = 130; 
   const gapY = 18;
 
   // 1) INFORME ARBITRAL
   doc.text('INFORME ARBITRAL:', marginLeft, y);
   y += 10;
-  drawLinedBox(doc, { x: marginLeft, y, width: contentW, height: boxH });
-  y += boxH + gapY;
+  drawLinedBox(doc, { x: marginLeft, y, width: contentW, height: boxHInforme });
+  y += boxHInforme + gapY;
 
   // Firmas árbitro
   const colWArb  = contentW / 3;
-  const baseYArb = y+30;
+  const baseYArb = y+20;
   doc
     .font('Helvetica')
     .fontSize(9)
@@ -808,8 +866,8 @@ function drawVocaliaBack(doc) {
   doc.font('Helvetica-Bold').fontSize(10).fillColor('#000');
   doc.text('INFORME VOCAL:', marginLeft, y);
   y += 10;
-  drawLinedBox(doc, { x: marginLeft, y, width: contentW, height: boxH });
-  y += boxH + 8;
+  drawLinedBox(doc, { x: marginLeft, y, width: contentW, height: boxHInforme });
+  y += boxHInforme + 8;
 
   // Cuadro extra: VALORES RECIBIDOS + CALIFICACIÓN ARBITRAL
   const extraH = drawValoresCalificacionBox(doc, {
@@ -821,7 +879,7 @@ function drawVocaliaBack(doc) {
 
   // Firmas Vocal
   const colWVoc  = contentW / 3;
-  const baseYVoc = y+30;
+  const baseYVoc = y+20;
   doc
     .font('Helvetica')
     .fontSize(9)
@@ -849,12 +907,12 @@ function drawVocaliaBack(doc) {
   doc.font('Helvetica-Bold').fontSize(10).fillColor('#000');
   doc.text('SANCIONES TRIBUNAL DE PENAS:', marginLeft, y);
   y += 10;
-  drawLinedBox(doc, { x: marginLeft, y, width: contentW, height: boxH });
-  y += boxH + 2 * gapY;
+  drawLinedBox(doc, { x: marginLeft, y, width: contentW, height: boxHSanciones  });
+  y += boxHSanciones + 2 * gapY;
 
   // Firmas finales
   const colW  = contentW / 3;
-  const baseY = y + 25;
+  const baseY = y ;
 
   doc
     .font('Helvetica')
@@ -1921,7 +1979,7 @@ app.get('/api/jugadores/reporte-pdf/:idDirigente', async (req, res) => {
       doc.restore();
 
       y += 16;
-      doc.moveTo(startX, y).lineTo(tableRX, y).strokeColor('#d9d9d9').lineWidth(0.7).stroke();
+      doc.moveTo(startX, y).lineTo(tableRX, y).strokeColor(LINE_NOTE).lineWidth(0.7).stroke();
       y += 6;
     }
 
