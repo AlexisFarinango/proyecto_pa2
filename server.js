@@ -218,7 +218,7 @@ function drawVocaliaBox(doc, { x, y, width }) {
 
   doc.font('Helvetica-Bold').fontSize(10).fillColor('#000');
   doc.text('VOCALIA', x, y + 3, { width: col1, align: 'center' });
-  doc.text('16.00',   x + col1, y + 3, { width: col2, align: 'center' });
+  doc.text('15.00',   x + col1, y + 3, { width: col2, align: 'center' });
   doc.text('TOTAL',   x + col1 + col2, y + 3, { width: col3, align: 'center' });
 
   const x2 = x + col1;
