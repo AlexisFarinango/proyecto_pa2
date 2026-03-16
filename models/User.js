@@ -13,7 +13,9 @@ const UserSchema = new mongoose.Schema({
   selfieImageUrl:{ type: String, required: true },
   autorizacionUrl: { type: String, default: null },
   team:      { type: String, required: true },
-  createdAt: { type: Date, default: Date.now }
+  eliminado: { type: Boolean, default: false },
+  createdAt: { type: Date, default: Date.now },
+  updatedAt: { type: Date, default: Date.now }
 });
 
 module.exports = mongoose.model('User', UserSchema);

@@ -4,6 +4,7 @@ const EquipoSchema = new mongoose.Schema({
   nombre: { type: String, required: true, trim: true },
   codigo: { type: String, trim: true }, // sin default null
   dirigenteId: { type: mongoose.Schema.Types.ObjectId, ref: 'Dirigente' },
+  numeroEliminaciones: { type: Number, default: 0 }
 }, { timestamps: true });
 
 EquipoSchema.index(

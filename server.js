@@ -16,9 +16,9 @@ const axios = require('axios');
 const puppeteer = require('puppeteer');
 const PDFDocument = require('pdfkit');
 const { PDFDocument: PDFLibDocument, StandardFonts, rgb } = require('pdf-lib');
-const { Request, Response } = require ('express');
+const { Request, Response } = require('express');
 const path = require('path');
-const fs   = require('fs');
+const fs = require('fs');
 
 const {
   Document,
@@ -37,13 +37,13 @@ const {
 
 // Colores de marca (ajústalos si quieres)
 const COLOR_PRIMARY = '#c62828'; // rojo del escudo
-const COLOR_SECOND  = '#0b2a6d'; // azul del balón
-const COLOR_TEXT    = '#222';
+const COLOR_SECOND = '#0b2a6d'; // azul del balón
+const COLOR_TEXT = '#222';
 // ===== Bordes / líneas (más oscuras) =====
-const BORDER_OUT   = '#777';  // antes '#999'  -> más contraste (marcos)
+const BORDER_OUT = '#777';  // antes '#999'  -> más contraste (marcos)
 const BORDER_INNER = '#c4c4c4'; // antes '#e0e0e0' -> líneas internas
 const BORDER_LIGHT = '#bdbdbd'; // antes '#d0d0d0' -> separadores suaves
-const LINE_NOTE    = '#b5b5b5'; // antes '#d0d0d0'/'#d9d9d9' -> líneas para escribir
+const LINE_NOTE = '#b5b5b5'; // antes '#d0d0d0'/'#d9d9d9' -> líneas para escribir
 
 
 function parseDateOrNull(value) {
@@ -82,7 +82,7 @@ function drawWatermark(doc) {
 
 function drawHeader(doc) {
   const startY = doc.page.margins.top - 6; // un pelín arriba
-  const logoW  = LOGO_BUFFER ? 52 : 0;
+  const logoW = LOGO_BUFFER ? 52 : 0;
 
   // línea base de título arranca a la derecha del logo
   const titleX = doc.page.margins.left + (logoW ? logoW + 12 : 0);
@@ -94,23 +94,23 @@ function drawHeader(doc) {
 
   doc.save();
   doc.fillColor(COLOR_PRIMARY).font('Helvetica-Bold').fontSize(14)
-     .text('Liga Deportiva Bienestar Familiar de Calderón', titleX, startY, { width: titleW, align: 'left' });
+    .text('Liga Deportiva Bienestar Familiar de Calderón', titleX, startY, { width: titleW, align: 'left' });
 
   doc.fillColor(COLOR_TEXT).font('Helvetica').fontSize(10)
-     .text('Acuerdo ministerial N. 0184 | 15 agosto 2023', titleX, startY + 20, { width: titleW, align: 'left' });
+    .text('Acuerdo ministerial N. 0184 | 15 agosto 2023', titleX, startY + 20, { width: titleW, align: 'left' });
 
   doc.fillColor(COLOR_SECOND).font('Helvetica-Bold').fontSize(11)
-     .text('Nómina de jugadores – 6º campeonato de indorfútbol masculino', titleX, startY + 36, { width: titleW, align: 'left' });
+    .text('Nómina de jugadores – 6º campeonato de indorfútbol masculino', titleX, startY + 36, { width: titleW, align: 'left' });
   doc.restore();
 
   // línea divisoria
   const lineY = startY + 56;
   doc.save();
   doc.moveTo(doc.page.margins.left, lineY)
-     .lineTo(doc.page.width - doc.page.margins.right, lineY)
-     .lineWidth(1)
-     .strokeColor('#e0e0e0')
-     .stroke();
+    .lineTo(doc.page.width - doc.page.margins.right, lineY)
+    .lineWidth(1)
+    .strokeColor('#e0e0e0')
+    .stroke();
   doc.restore();
 
   // devuelve el Y recomendado para comenzar contenido
@@ -132,12 +132,12 @@ function padJugadores(jugadores) {
 
 // Dibuja encabezado específico para Hoja de Vocalía
 function drawVocaliaHeader(doc, { tituloExtra = '' } = {}) {
-  const marginLeft  = doc.page.margins.left;
+  const marginLeft = doc.page.margins.left;
   const marginRight = doc.page.width - doc.page.margins.right;
-  const contentW    = marginRight - marginLeft;
+  const contentW = marginRight - marginLeft;
 
   const logoW = LOGO_BUFFER ? 42 : 0;
-  const yTop  = doc.page.margins.top - 10;
+  const yTop = doc.page.margins.top - 10;
 
   if (LOGO_BUFFER) {
     doc.image(LOGO_BUFFER, marginLeft, yTop, { width: logoW });
@@ -200,9 +200,9 @@ function drawVocaliaBox(doc, { x, y, width }) {
   const col2 = width * 0.30;
   const col3 = width - col1 - col2;
 
-  const headerH     = 16;
-  const rowHNormal  = 23;  // filas vacías
-  const rowHBalon   = 17;  // ⬅️ SOLO BALÓN ASIGNADO (más alto)
+  const headerH = 16;
+  const rowHNormal = 23;  // filas vacías
+  const rowHBalon = 17;  // ⬅️ SOLO BALÓN ASIGNADO (más alto)
 
   const totalH = headerH + rowHNormal * 2 + rowHBalon;
 
@@ -218,8 +218,8 @@ function drawVocaliaBox(doc, { x, y, width }) {
 
   doc.font('Helvetica-Bold').fontSize(10).fillColor('#000');
   doc.text('VOCALIA', x, y + 3, { width: col1, align: 'center' });
-  doc.text('15.00',   x + col1, y + 3, { width: col2, align: 'center' });
-  doc.text('TOTAL',   x + col1 + col2, y + 3, { width: col3, align: 'center' });
+  doc.text('15.00', x + col1, y + 3, { width: col2, align: 'center' });
+  doc.text('TOTAL', x + col1 + col2, y + 3, { width: col3, align: 'center' });
 
   const x2 = x + col1;
   const x3 = x + col1 + col2;
@@ -277,15 +277,15 @@ function drawJugadoresTable(doc, {
   width,
   jugadores, // array de hasta 20 (puede tener nulls)
 }) {
-  const headerH   = 24;
-  const rowH      = 16;
+  const headerH = 24;
+  const rowH = 16;
   const totalRows = 20;
 
-  const numW    = 16;
+  const numW = 16;
   const numJugW = 38;
-  const extraW  = 18;
-  const smallW  = 20;
-  const gap     = 3;
+  const extraW = 18;
+  const smallW = 20;
+  const gap = 3;
 
   const nombreW = width - (
     numW + numJugW + extraW + smallW * 3 + gap * 6
@@ -319,11 +319,11 @@ function drawJugadoresTable(doc, {
   // columna extra sin título
   cx += extraW + gap;
 
-  doc.text('G',  cx,           y + 6, { width: smallW, align: 'center' });
+  doc.text('G', cx, y + 6, { width: smallW, align: 'center' });
   cx += smallW + gap;
-  doc.text('TA', cx,           y + 6, { width: smallW, align: 'center' });
+  doc.text('TA', cx, y + 6, { width: smallW, align: 'center' });
   cx += smallW + gap;
-  doc.text('TR', cx,           y + 6, { width: smallW, align: 'center' });
+  doc.text('TR', cx, y + 6, { width: smallW, align: 'center' });
 
   doc.restore();
   doc.rect(x, y, width, headerH).strokeColor(BORDER_OUT).lineWidth(0.6).stroke();
@@ -433,12 +433,12 @@ function drawJugadoresTable(doc, {
 // Tabla de cambios: INGRESA / (col vacía) / SALE  |  INGRESA / (col vacía) / SALE
 function drawCambiosTable(doc, { x, y, width }) {
   const headerH = 16;
-  const rowH    = 16;
-  const rows    = 4;
-  const totalH  = headerH + rowH * rows;
+  const rowH = 16;
+  const rows = 4;
+  const totalH = headerH + rowH * rows;
 
   const colCount = 6;              // INGRESA | vacío | SALE | INGRESA | vacío | SALE
-  const colW     = width / colCount;
+  const colW = width / colCount;
 
 
   // Marco general
@@ -523,14 +523,14 @@ function drawVocaliaFront(doc, {
 }) {
   drawWatermark(doc);
 
-  const marginLeft  = doc.page.margins.left;
+  const marginLeft = doc.page.margins.left;
   const marginRight = doc.page.width - doc.page.margins.right;
-  const contentW    = marginRight - marginLeft;
+  const contentW = marginRight - marginLeft;
 
   let y = drawVocaliaHeader(doc);
 
   // ===== fila de datos generales (FECHA, HORARIO, FASE, BLANCO, EQUIPO VOCAL) =====
-  const infoH     = 28;
+  const infoH = 28;
   const base = contentW * 0.25;
 
   const colWidths = [
@@ -576,9 +576,9 @@ function drawVocaliaFront(doc, {
 
   // ===== Títulos de equipo =====
   const gapCols = 10;
-  const halfW   = (contentW - gapCols) / 2;
-  const leftX   = marginLeft;
-  const rightX  = marginLeft + halfW + gapCols;
+  const halfW = (contentW - gapCols) / 2;
+  const leftX = marginLeft;
+  const rightX = marginLeft + halfW + gapCols;
 
   doc.font('Helvetica-Bold').fontSize(12).fillColor('#000');
   doc.text(`NOMBRE EQUIPO: ${nombreEq1}`, leftX, y, { width: halfW });
@@ -587,13 +587,13 @@ function drawVocaliaFront(doc, {
   y += 14;
 
   // ===== Recuadro de VOCALÍA bajo cada nombre =====
-  const boxHLeft  = drawVocaliaBox(doc, { x: leftX,  y, width: halfW });
+  const boxHLeft = drawVocaliaBox(doc, { x: leftX, y, width: halfW });
   const boxHRight = drawVocaliaBox(doc, { x: rightX, y, width: halfW });
 
   const afterBoxesY = y + Math.max(boxHLeft, boxHRight) + 8;
 
   // ===== Tablas de jugadores =====
-  const bottomLeft  = drawJugadoresTable(doc, {
+  const bottomLeft = drawJugadoresTable(doc, {
     x: leftX,
     y: afterBoxesY,
     width: halfW,
@@ -610,7 +610,7 @@ function drawVocaliaFront(doc, {
   let yAfterPlayers = Math.max(bottomLeft, bottomRight) + 10;
 
   // ===== Tabla de cambios por equipo =====
-  const cambiosHLeft  = drawCambiosTable(doc, { x: leftX,  y: yAfterPlayers, width: halfW });
+  const cambiosHLeft = drawCambiosTable(doc, { x: leftX, y: yAfterPlayers, width: halfW });
   const cambiosHRight = drawCambiosTable(doc, { x: rightX, y: yAfterPlayers, width: halfW });
 
   const yAfterCambios = yAfterPlayers + Math.max(cambiosHLeft, cambiosHRight) + 80;
@@ -656,8 +656,8 @@ function drawLinedBox(doc, { x, y, width, height, lineSpacing = 22 }) {
 }
 
 function drawValoresCalificacionBox(doc, { x, y, width }) {
-  const hTop    = 18;  // fila 1: VALORES RECIBIDOS / CALIFICACIÓN (más baja)
-  const hMid    = 14;  // fila 2: EFECTIVO / TRANSFERENCIA (más baja)
+  const hTop = 18;  // fila 1: VALORES RECIBIDOS / CALIFICACIÓN (más baja)
+  const hMid = 14;  // fila 2: EFECTIVO / TRANSFERENCIA (más baja)
   const hBottom = 34;  // fila 3: área para escribir (más alta)
 
   const totalH = hTop + hMid + hBottom;
@@ -666,13 +666,13 @@ function drawValoresCalificacionBox(doc, { x, y, width }) {
   // 60% para VALORES RECIBIDOS (que luego se divide en EFECTIVO / TRANSFERENCIA)
   // 40% para CALIFICACIÓN
   const colValores = width * 0.60;
-  const colCalif   = width - colValores;
+  const colCalif = width - colValores;
 
-  const colEf      = colValores / 2;      // EFECTIVO
-  const colTrans   = colValores - colEf;  // TRANSFERENCIA
+  const colEf = colValores / 2;      // EFECTIVO
+  const colTrans = colValores - colEf;  // TRANSFERENCIA
 
 
-  const xEf    = x + colEf;       // división EFECTIVO / TRANSFERENCIA
+  const xEf = x + colEf;       // división EFECTIVO / TRANSFERENCIA
   const xCalif = x + colValores;  // división TRANSFERENCIA / CALIFICACIÓN
 
   const midY1 = y + hTop;           // separa fila 1 y 2
@@ -687,9 +687,9 @@ function drawValoresCalificacionBox(doc, { x, y, width }) {
   // ==== Líneas verticales ====
   // EFECTIVO / TRANSFERENCIA
   doc.moveTo(xEf, midY1).lineTo(xEf, y + totalH)
-  .strokeColor(BORDER_INNER)
-  .lineWidth(0.6)
-  .stroke();
+    .strokeColor(BORDER_INNER)
+    .lineWidth(0.6)
+    .stroke();
 
   // TRANSFERENCIA / CALIFICACIÓN
   doc.moveTo(xCalif, y).lineTo(xCalif, y + totalH)
@@ -711,98 +711,98 @@ function drawValoresCalificacionBox(doc, { x, y, width }) {
     .lineWidth(0.6)
     .stroke();
 
-    // ✅ Línea horizontal extra dentro de la fila 3 (solo VALORES)
-    // para crear la "fila faltante" (Equipo 1 / Equipo 2)
-    const hEquipoRow = 14; // altura de esa subfila (ajústala a gusto)
-    const yEquipoLine = midY2 + hEquipoRow;
+  // ✅ Línea horizontal extra dentro de la fila 3 (solo VALORES)
+  // para crear la "fila faltante" (Equipo 1 / Equipo 2)
+  const hEquipoRow = 14; // altura de esa subfila (ajústala a gusto)
+  const yEquipoLine = midY2 + hEquipoRow;
 
-    doc.moveTo(x, yEquipoLine).lineTo(x + colValores, yEquipoLine)
-      .strokeColor(BORDER_INNER)
-      .lineWidth(0.6)
-      .stroke();
+  doc.moveTo(x, yEquipoLine).lineTo(x + colValores, yEquipoLine)
+    .strokeColor(BORDER_INNER)
+    .lineWidth(0.6)
+    .stroke();
 
 
-    // =============================
-    // Divisiones internas abajo (solo en fila 3)
-    // =============================
-    const bottomTop = midY2;          // donde empieza el área de valores
-    const bottomEnd = y + totalH;     // donde termina el recuadro
-    
-    // EFECTIVO: 2 divisiones internas (3 columnas)
-    const efLeft = x;
-    const efRight = xEf;
-    const efW = efRight - efLeft;
-    
-    const efDiv1 = efLeft + efW / 2;
-    const efDiv2 = efLeft + (efW * 2) / 2;
-    
-    doc.moveTo(efDiv1, bottomTop).lineTo(efDiv1, bottomEnd)
+  // =============================
+  // Divisiones internas abajo (solo en fila 3)
+  // =============================
+  const bottomTop = midY2;          // donde empieza el área de valores
+  const bottomEnd = y + totalH;     // donde termina el recuadro
+
+  // EFECTIVO: 2 divisiones internas (3 columnas)
+  const efLeft = x;
+  const efRight = xEf;
+  const efW = efRight - efLeft;
+
+  const efDiv1 = efLeft + efW / 2;
+  const efDiv2 = efLeft + (efW * 2) / 2;
+
+  doc.moveTo(efDiv1, bottomTop).lineTo(efDiv1, bottomEnd)
     .strokeColor(BORDER_INNER).lineWidth(0.5).stroke();
-    
-    doc.moveTo(efDiv2, bottomTop).lineTo(efDiv2, bottomEnd)
+
+  doc.moveTo(efDiv2, bottomTop).lineTo(efDiv2, bottomEnd)
     .strokeColor(BORDER_INNER).lineWidth(0.5).stroke();
-    
-    // TRANSFERENCIA: 2 divisiones internas (3 columnas)
-    const trLeft = xEf;
-    const trRight = xCalif;
-    const trW = trRight - trLeft;
-    
-    const trDiv1 = trLeft + trW / 2;
-    const trDiv2 = trLeft + (trW * 2) / 2;
-    
-    doc.moveTo(trDiv1, bottomTop).lineTo(trDiv1, bottomEnd)
+
+  // TRANSFERENCIA: 2 divisiones internas (3 columnas)
+  const trLeft = xEf;
+  const trRight = xCalif;
+  const trW = trRight - trLeft;
+
+  const trDiv1 = trLeft + trW / 2;
+  const trDiv2 = trLeft + (trW * 2) / 2;
+
+  doc.moveTo(trDiv1, bottomTop).lineTo(trDiv1, bottomEnd)
     .strokeColor(BORDER_INNER).lineWidth(0.6).stroke();
-    
-    doc.moveTo(trDiv2, bottomTop).lineTo(trDiv2, bottomEnd)
+
+  doc.moveTo(trDiv2, bottomTop).lineTo(trDiv2, bottomEnd)
     .strokeColor(BORDER_INNER).lineWidth(0.6).stroke();
-    
-    // ==== Textos ====
-    doc.font('Helvetica-Bold').fontSize(9).fillColor('#000');
-  
-    // Fila 1: VALORES RECIBIDOS (ocupa EFECTIVO+TRANSFERENCIA)
-    doc.text(
-      'VALORES RECIBIDOS',
-      x + 4,
-      y + 4,
-      {
-        width: colValores - 8,
-        align: 'center',
-      }
-    );
-  
-    // Fila 1: CALIFICACIÓN ARBITRAL
-    doc.text(
-      'CALIFICACIÓN ARBITRAL DEL 1 - 10',
-      xCalif + 4,
-      y + 4,
-      {
-        width: colCalif - 8,
-        align: 'center',
-      }
-    );
-  
-    // Fila 2: EFECTIVO
-    doc.text(
-      'EFECTIVO',
-      x + 4,
-      midY1 + 3,
-      {
-        width: colEf - 8,
-        align: 'center',
-      }
-    );
-  
-    // Fila 2: TRANSFERENCIA
-    doc.text(
-      'TRANSFERENCIA',
-      xEf + 4,
-      midY1 + 3,
-      {
-        width: colTrans - 8,
-        align: 'center',
-      }
-    );
-    
+
+  // ==== Textos ====
+  doc.font('Helvetica-Bold').fontSize(9).fillColor('#000');
+
+  // Fila 1: VALORES RECIBIDOS (ocupa EFECTIVO+TRANSFERENCIA)
+  doc.text(
+    'VALORES RECIBIDOS',
+    x + 4,
+    y + 4,
+    {
+      width: colValores - 8,
+      align: 'center',
+    }
+  );
+
+  // Fila 1: CALIFICACIÓN ARBITRAL
+  doc.text(
+    'CALIFICACIÓN ARBITRAL DEL 1 - 10',
+    xCalif + 4,
+    y + 4,
+    {
+      width: colCalif - 8,
+      align: 'center',
+    }
+  );
+
+  // Fila 2: EFECTIVO
+  doc.text(
+    'EFECTIVO',
+    x + 4,
+    midY1 + 3,
+    {
+      width: colEf - 8,
+      align: 'center',
+    }
+  );
+
+  // Fila 2: TRANSFERENCIA
+  doc.text(
+    'TRANSFERENCIA',
+    xEf + 4,
+    midY1 + 3,
+    {
+      width: colTrans - 8,
+      align: 'center',
+    }
+  );
+
   // Fila 3 se queda vacía (EFECTIVO / TRANSFERENCIA para escribir montos)
   // La parte de CALIFICACIÓN también queda vacía, pero como un solo cuadro grande.
 
@@ -815,9 +815,9 @@ function drawValoresCalificacionBox(doc, { x, y, width }) {
 
 // PÁGINA 2 – Reverso (informe)
 function drawVocaliaBack(doc) {
-  const marginLeft  = doc.page.margins.left;
+  const marginLeft = doc.page.margins.left;
   const marginRight = doc.page.width - doc.page.margins.right;
-  const contentW    = marginRight - marginLeft;
+  const contentW = marginRight - marginLeft;
 
   // Sólo marca de agua, SIN encabezado institucional
   drawWatermark(doc);
@@ -827,7 +827,7 @@ function drawVocaliaBack(doc) {
   doc.font('Helvetica-Bold').fontSize(10).fillColor('#000');
 
   const boxHInforme = 152;
-  const boxHSanciones = 130; 
+  const boxHSanciones = 130;
   const gapY = 18;
 
   // 1) INFORME ARBITRAL
@@ -837,8 +837,8 @@ function drawVocaliaBack(doc) {
   y += boxHInforme + gapY;
 
   // Firmas árbitro
-  const colWArb  = contentW / 3;
-  const baseYArb = y+20;
+  const colWArb = contentW / 3;
+  const baseYArb = y + 20;
   doc
     .font('Helvetica')
     .fontSize(9)
@@ -878,8 +878,8 @@ function drawVocaliaBack(doc) {
   y += extraH + gapY;
 
   // Firmas Vocal
-  const colWVoc  = contentW / 3;
-  const baseYVoc = y+20;
+  const colWVoc = contentW / 3;
+  const baseYVoc = y + 20;
   doc
     .font('Helvetica')
     .fontSize(9)
@@ -907,12 +907,12 @@ function drawVocaliaBack(doc) {
   doc.font('Helvetica-Bold').fontSize(10).fillColor('#000');
   doc.text('SANCIONES TRIBUNAL DE PENAS:', marginLeft, y);
   y += 10;
-  drawLinedBox(doc, { x: marginLeft, y, width: contentW, height: boxHSanciones  });
+  drawLinedBox(doc, { x: marginLeft, y, width: contentW, height: boxHSanciones });
   y += boxHSanciones + 2 * gapY;
 
   // Firmas finales
-  const colW  = contentW / 3;
-  const baseY = y ;
+  const colW = contentW / 3;
+  const baseY = y;
 
   doc
     .font('Helvetica')
@@ -1084,11 +1084,11 @@ app.post(
       }
 
       // Verificar cantidad máxima de jugadores
-      const count = await User.countDocuments({ team: equipo.nombre });
+      const count = await User.countDocuments({ team: equipo.nombre, eliminado: false });
       if (count >= 20) return res.status(400).json({ message: 'Este equipo ya tiene 20 jugadores registrados' });
 
       // Verificar número ya usado en ese equipo
-      const existsNum = await User.findOne({ team: equipo.nombre, numjugador });
+      const existsNum = await User.findOne({ team: equipo.nombre, numjugador, eliminado: false });
       if (existsNum) return res.status(400).json({ message: `Número ${numjugador} ya registrado en ${equipo.nombre}` });
 
       // Parse fecha
@@ -1167,7 +1167,7 @@ app.get('/api/equipos/:codigo/jugadores', async (req, res) => {
   try {
     const equipo = await Equipo.findOne({ codigo: req.params.codigo });
     if (!equipo) return res.status(404).json({ message: 'Código inválido' });
-    const jugadores = await User.find({ team: equipo.nombre }).select(
+    const jugadores = await User.find({ team: equipo.nombre, eliminado: false }).select(
       '_id firstName lastName dob age identificacion numjugador team'
     ); // sin fotos
     res.json({ equipo: equipo.nombre, jugadores });
@@ -1196,7 +1196,7 @@ app.get('/api/dirigentes/:id/jugadores', async (req, res) => {
   try {
     const dirigente = await Dirigente.findById(req.params.id).lean();
     if (!dirigente) return res.status(404).json({ message: 'Dirigente no encontrado' });
-    const jugadores = await User.find({ team: dirigente.nombre }).sort({ lastName: 1 }).lean();
+    const jugadores = await User.find({ team: dirigente.nombre, eliminado: false }).sort({ lastName: 1 }).lean();
     res.json(jugadores);
   } catch (err) {
     res.status(500).json({ message: 'Error obteniendo jugadores' });
@@ -1238,7 +1238,7 @@ app.put(
       if (up.numjugador) {
         const n = Number(up.numjugador);
         if (isNaN(n) || n < 1 || n > 99) return res.status(400).json({ message: 'Número inválido (1-99)' });
-        const dupNum = await User.findOne({ team: jugador.team, numjugador: n, _id: { $ne: jugador._id } });
+        const dupNum = await User.findOne({ team: jugador.team, numjugador: n, eliminado: false, _id: { $ne: jugador._id } });
         if (dupNum) return res.status(400).json({ message: `Número ${n} ya registrado en ${jugador.team}` });
       }
 
@@ -1302,10 +1302,45 @@ app.put(
 // Eliminar jugador
 app.delete('/api/jugadores/:id', async (req, res) => {
   try {
-    await User.findByIdAndDelete(req.params.id);
-    res.json({ message: 'Jugador eliminado correctamente' });
-  } catch {
-    res.status(500).json({ message: 'Error eliminando jugador' });
+    const jugador = await User.findById(req.params.id);
+    if (!jugador) {
+      return res.status(404).json({ message: 'Jugador no encontrado' });
+    }
+
+    if (jugador.eliminado) {
+      return res.status(400).json({ message: 'El jugador ya fue eliminado' });
+    }
+
+    const equipo = await Equipo.findOne({ nombre: jugador.team });
+    if (!equipo) {
+      return res.status(404).json({ message: 'Equipo no encontrado para este jugador' });
+    }
+
+    if ((equipo.numeroEliminaciones || 0) >= 5) {
+      return res.status(400).json({
+        message: 'Ha excedido el número de eliminaciones permitidas para este equipo'
+      });
+    }
+
+    const identificacionOriginal = jugador.identificacion || '';
+    jugador.identificacion = `${identificacionOriginal}_elilog_${Date.now()}`;
+    jugador.eliminado = true;
+    jugador.updatedAt = new Date();
+
+    await jugador.save();
+
+    equipo.numeroEliminaciones = (equipo.numeroEliminaciones || 0) + 1;
+    await equipo.save();
+
+    res.json({
+      message: 'Jugador eliminado correctamente',
+      numeroEliminaciones: equipo.numeroEliminaciones
+    });
+  } catch (error) {
+    res.status(500).json({
+      message: 'Error eliminando jugador',
+      error: error.message
+    });
   }
 });
 
@@ -1374,8 +1409,8 @@ async function fetchImageBuffer(url) {
   });
   const buf = Buffer.from(resp.data);
 
-  const isPng  = buf.length > 8 && buf[0]===0x89 && buf[1]===0x50 && buf[2]===0x4E && buf[3]===0x47;
-  const isJpeg = buf.length > 3 && buf[0]===0xFF && buf[1]===0xD8;
+  const isPng = buf.length > 8 && buf[0] === 0x89 && buf[1] === 0x50 && buf[2] === 0x4E && buf[3] === 0x47;
+  const isJpeg = buf.length > 3 && buf[0] === 0xFF && buf[1] === 0xD8;
   if (!isPng && !isJpeg) throw new Error('Imagen no PNG/JPEG válida');
   return buf;
 }
@@ -1410,6 +1445,7 @@ app.get('/api/admin/autorizaciones/consolidado', basicAuth, async (req, res) => 
     const users = await User.find({
       age: { $gte: 14, $lt: 18 },
       autorizacionUrl: { $ne: null },
+      eliminado: false
     })
       .sort({ lastName: 1, firstName: 1 })
       .lean();
@@ -1572,7 +1608,7 @@ app.get('/api/admin/autorizaciones/consolidado', basicAuth, async (req, res) => 
     } else {
       try {
         res.end();
-      } catch {}
+      } catch { }
     }
   }
 });
@@ -1608,7 +1644,7 @@ app.get('/api/fixture/hoja-vocalia/:idFecha/:idxPartido', basicAuth, async (req,
     const fechaPartido = partido.fechaPartido || fecha.fechaCabecera || null;
 
     // Jugadores por equipo
-    const jugadoresEq1 = await User.find({ team: nombreEq1 })
+    const jugadoresEq1 = await User.find({ team: nombreEq1, eliminado: false })
       .sort({ lastName: 1, firstName: 1 })
       .lean();
     const jugadoresEq2 = await User.find({ team: nombreEq2 })
@@ -1769,17 +1805,17 @@ app.post('/api/fixture', basicAuth, async (req, res) => {
 
     const partidosNorm = Array.isArray(partidos)
       ? partidos.map((p) => ({
-          equipo1: p.equipo1,
-          equipo2: p.equipo2,
-          // 👇 puede venir null o vacío
-          fechaPartido: parseDateOrNull(p.fechaPartido),
-          valor_adicional_eq1: Array.isArray(p.valor_adicional_eq1)
-            ? p.valor_adicional_eq1
-            : [],
-          valor_adicional_eq2: Array.isArray(p.valor_adicional_eq2)
-            ? p.valor_adicional_eq2
-            : [],
-        }))
+        equipo1: p.equipo1,
+        equipo2: p.equipo2,
+        // 👇 puede venir null o vacío
+        fechaPartido: parseDateOrNull(p.fechaPartido),
+        valor_adicional_eq1: Array.isArray(p.valor_adicional_eq1)
+          ? p.valor_adicional_eq1
+          : [],
+        valor_adicional_eq2: Array.isArray(p.valor_adicional_eq2)
+          ? p.valor_adicional_eq2
+          : [],
+      }))
       : [];
 
     // ✅ solo validamos que tengan equipos; la fecha del partido puede ser null
@@ -1925,7 +1961,7 @@ app.get('/api/jugadores/reporte-pdf/:idDirigente', async (req, res) => {
     if (!dir) return res.status(404).json({ message: 'Dirigente no encontrado' });
 
     const equipoNombre = dir.nombre;
-    const jugadores = await User.find({ team: equipoNombre }).sort({ lastName: 1 }).lean();
+    const jugadores = await User.find({ team: equipoNombre, eliminado: false }).sort({ lastName: 1 }).lean();
 
     res.status(200);
     res.setHeader('Content-Type', 'application/pdf');
@@ -1945,26 +1981,26 @@ app.get('/api/jugadores/reporte-pdf/:idDirigente', async (req, res) => {
     // ===== Título del equipo SOLO en la primera página =====
     doc.save();
     doc.font('Helvetica-Bold').fontSize(16).fillColor(COLOR_TEXT)
-       .text(`Equipo: ${equipoNombre}`, doc.page.margins.left, y, { align: 'center' });
+      .text(`Equipo: ${equipoNombre}`, doc.page.margins.left, y, { align: 'center' });
     doc.restore();
     const GAP_AFTER_TEAM_TITLE = 28;
     y += GAP_AFTER_TEAM_TITLE;
 
     // ===== Definición de tabla =====
     const cols = [
-      { key: 'firstName',       title: 'Nombres',        w: 80 },
-      { key: 'lastName',        title: 'Apellidos',      w: 70 },
-      { key: 'age',             title: 'Edad',           w: 30 },
-      { key: 'dob',             title: 'Fecha Nac.',     w: 60 },
-      { key: 'identificacion',  title: 'Identificación', w: 75 },
-      { key: 'numjugador',      title: 'Número',         w: 40 },
-      { key: 'team',            title: 'Equipo',         w: 75 },
-      { key: 'selfie',          title: 'Selfie',         w: 62 },
+      { key: 'firstName', title: 'Nombres', w: 80 },
+      { key: 'lastName', title: 'Apellidos', w: 70 },
+      { key: 'age', title: 'Edad', w: 30 },
+      { key: 'dob', title: 'Fecha Nac.', w: 60 },
+      { key: 'identificacion', title: 'Identificación', w: 75 },
+      { key: 'numjugador', title: 'Número', w: 40 },
+      { key: 'team', title: 'Equipo', w: 75 },
+      { key: 'selfie', title: 'Selfie', w: 62 },
     ];
-    const colGap   = 6;
-    const startX   = doc.page.margins.left;
-    const tableW   = cols.reduce((acc, c) => acc + c.w, 0) + colGap * (cols.length - 1);
-    const tableRX  = startX + tableW;
+    const colGap = 6;
+    const startX = doc.page.margins.left;
+    const tableW = cols.reduce((acc, c) => acc + c.w, 0) + colGap * (cols.length - 1);
+    const tableRX = startX + tableW;
 
     // ===== Helper: dibuja encabezado de la tabla =====
     function drawTableHeaderRow() {
@@ -2015,15 +2051,15 @@ app.get('/api/jugadores/reporte-pdf/:idDirigente', async (req, res) => {
       }
 
       let x = startX;
-      const fecha = j.dob ? new Date(j.dob).toISOString().slice(0,10).split('-').reverse().join('/') : '';
+      const fecha = j.dob ? new Date(j.dob).toISOString().slice(0, 10).split('-').reverse().join('/') : '';
       const row = {
-        firstName:       j.firstName || '',
-        lastName:        j.lastName || '',
-        age:             (j.age ?? '').toString(),
-        dob:             fecha,
-        identificacion:  j.identificacion || '',
-        numjugador:      (j.numjugador ?? '').toString(),
-        team:            j.team || '',
+        firstName: j.firstName || '',
+        lastName: j.lastName || '',
+        age: (j.age ?? '').toString(),
+        dob: fecha,
+        identificacion: j.identificacion || '',
+        numjugador: (j.numjugador ?? '').toString(),
+        team: j.team || '',
       };
 
       // texto (hasta Equipo)
@@ -2038,9 +2074,9 @@ app.get('/api/jugadores/reporte-pdf/:idDirigente', async (req, res) => {
       try {
         if (j.selfieImageUrl) {
           const thumbUrl = toCloudinaryThumb(j.selfieImageUrl);
-          const buf      = await fetchImageBuffer(thumbUrl);
-          const imgW     = Math.min(selfieCol.w, 58);
-          const imgH     = 42;
+          const buf = await fetchImageBuffer(thumbUrl);
+          const imgW = Math.min(selfieCol.w, 58);
+          const imgH = 42;
           doc.image(buf, x, y - 2, { fit: [imgW, imgH], width: imgW, height: imgH });
           selfieDrawnHeight = imgH;
         } else {
@@ -2083,7 +2119,7 @@ app.get('/api/jugadores/reporte-pdf/:idDirigente', async (req, res) => {
 
     // Firma centrada
     doc.text('_______________________________', startX, doc.y, { width: tableW, align: 'center' });
-    doc.text('Firma del Dirigente',           startX, undefined, { width: tableW, align: 'center' });
+    doc.text('Firma del Dirigente', startX, undefined, { width: tableW, align: 'center' });
 
     // Campos de nombre/identificación
     doc.moveDown(1.2);
@@ -2096,7 +2132,7 @@ app.get('/api/jugadores/reporte-pdf/:idDirigente', async (req, res) => {
     if (!res.headersSent) {
       res.status(500).json({ message: 'Error generando PDF', error: err.message });
     } else {
-      try { res.end(); } catch {}
+      try { res.end(); } catch { }
     }
   }
 });
@@ -2109,7 +2145,7 @@ app.get('/api/jugadores/reporte/:idDirigente', async (req, res) => {
     if (!dir) return res.status(404).json({ message: 'Dirigente no encontrado' });
 
     const equipoNombre = dir.nombre;
-    const jugadores = await User.find({ team: equipoNombre }).sort({ lastName: 1 }).lean();
+    const jugadores = await User.find({ team: equipoNombre, eliminado: false }).sort({ lastName: 1 }).lean();
 
     const headerCell = (text) =>
       new TableCell({
@@ -2178,7 +2214,7 @@ app.get('/api/jugadores/reporte/:idDirigente', async (req, res) => {
             textCell(j.firstName),
             textCell(j.lastName),
             textCell(j.age),
-            textCell(j.dob ? String(j.dob).slice(0,10).split('-').reverse().join('/') : ''),
+            textCell(j.dob ? String(j.dob).slice(0, 10).split('-').reverse().join('/') : ''),
             textCell(j.identificacion),
             textCell(j.numjugador),
             textCell(j.team),
@@ -2251,7 +2287,7 @@ app.get('/api/jugadores/reporte/:idDirigente', async (req, res) => {
 });
 
 app.get('/api/users', async (req, res) => {
-  const users = await User.find().sort({ createdAt: -1 }).lean();
+  const users = await User.find({ eliminado: false }).sort({ createdAt: -1 }).lean();
   res.json(users);
 });
 
@@ -2259,8 +2295,8 @@ app.get('/api/users', async (req, res) => {
 app.get('/api/users/export', basicAuth, async (req, res) => {
   try {
     res.setHeader("Access-Control-Expose-Headers", "Content-Disposition");
-    res.setTimeout(5 * 60 * 1000); 
-    const users = await User.find().sort({ createdAt: 1 }).lean();
+    res.setTimeout(5 * 60 * 1000);
+    const users = await User.find({ eliminado: false }).sort({ createdAt: 1 }).lean();
     const workbook = new ExcelJS.Workbook();
     const worksheet = workbook.addWorksheet('Usuarios');
 
@@ -2283,7 +2319,7 @@ app.get('/api/users/export', basicAuth, async (req, res) => {
         firstName: u.firstName,
         lastName: u.lastName,
         age: `${u.age} AÑOS`,
-        dob: new Date(u.dob).toISOString().slice(0,10).split('-').reverse().join('/'),
+        dob: new Date(u.dob).toISOString().slice(0, 10).split('-').reverse().join('/'),
         identificacion: u.identificacion,
         numjugador: u.numjugador,
         team: u.team,
@@ -2337,6 +2373,95 @@ app.get('/api/users/export', basicAuth, async (req, res) => {
   } catch (err) {
     console.error(err);
     res.status(500).json({ message: 'Error exportando', detail: err.message });
+  }
+});
+
+// Protected export endpoint - jugadores eliminados
+app.get('/api/users/export-eliminados', basicAuth, async (req, res) => {
+  try {
+    res.setHeader("Access-Control-Expose-Headers", "Content-Disposition");
+    res.setTimeout(5 * 60 * 1000);
+
+    const users = await User.find({ eliminado: true }).sort({ createdAt: 1 }).lean();
+
+    if (!users.length) {
+      return res.status(404).json({ message: 'No existen jugadores eliminados para exportar' });
+    }
+
+    const workbook = new ExcelJS.Workbook();
+    const worksheet = workbook.addWorksheet('Usuarios Eliminados');
+
+    worksheet.columns = [
+      { header: 'NOMBRES', key: 'firstName', width: 20 },
+      { header: 'APELLIDOS', key: 'lastName', width: 20 },
+      { header: 'EDAD', key: 'age', width: 10 },
+      { header: 'FECHA_NACIMIENTO', key: 'dob', width: 15 },
+      { header: 'IDENTIFICACION', key: 'identificacion', width: 28 },
+      { header: 'NUMERO_JUGADOR', key: 'numjugador', width: 15 },
+      { header: 'EQUIPO', key: 'team', width: 20 },
+      { header: 'FOTO_CEDULA_FRONTAL', key: 'idImage', width: 18 },
+      { header: 'FOTO_CEDULA_TRASERA', key: 'idBackImage', width: 18 },
+      { header: 'FOTO_SELFIE', key: 'selfieImage', width: 18 },
+    ];
+
+    users.forEach((u) => {
+      worksheet.addRow({
+        firstName: u.firstName,
+        lastName: u.lastName,
+        age: `${u.age} AÑOS`,
+        dob: u.dob ? new Date(u.dob).toISOString().slice(0, 10).split('-').reverse().join('/') : '',
+        identificacion: u.identificacion,
+        numjugador: u.numjugador,
+        team: u.team,
+        idImage: '',
+        idBackImage: '',
+        selfieImage: '',
+      });
+    });
+
+    for (let i = 0; i < users.length; i++) {
+      const u = users[i];
+      const rowNumber = i + 2;
+      worksheet.getRow(rowNumber).height = 80;
+
+      const fetchBuf = async (origUrl) => {
+        const safe = toCloudinaryFormat(origUrl, 'jpg', 800);
+        const resp = await axios.get(safe, { responseType: 'arraybuffer' });
+        return Buffer.from(resp.data);
+      };
+
+      try {
+        if (u.idImageUrl) {
+          const buf = await fetchBuf(u.idImageUrl);
+          const imageId = workbook.addImage({ buffer: buf, extension: 'jpeg' });
+          worksheet.addImage(imageId, { tl: { col: 7, row: rowNumber - 1 }, ext: { width: 120, height: 80 } });
+        }
+      } catch (e) { }
+
+      try {
+        if (u.idBackImageUrl) {
+          const buf = await fetchBuf(u.idBackImageUrl);
+          const imageId3 = workbook.addImage({ buffer: buf, extension: 'jpeg' });
+          worksheet.addImage(imageId3, { tl: { col: 8, row: rowNumber - 1 }, ext: { width: 120, height: 80 } });
+        }
+      } catch (e) { }
+
+      try {
+        if (u.selfieImageUrl) {
+          const buf2 = await fetchBuf(u.selfieImageUrl);
+          const imageId2 = workbook.addImage({ buffer: buf2, extension: 'jpeg' });
+          worksheet.addImage(imageId2, { tl: { col: 9, row: rowNumber - 1 }, ext: { width: 120, height: 80 } });
+        }
+      } catch (e) { }
+    }
+
+    const buffer = await workbook.xlsx.writeBuffer();
+    res.setHeader('Content-Disposition', 'attachment; filename="usuarios_eliminados_Futbol.xlsx"');
+    res.setHeader('Content-Type', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
+    res.send(buffer);
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ message: 'Error exportando jugadores eliminados', detail: err.message });
   }
 });
 
