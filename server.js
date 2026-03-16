@@ -1647,7 +1647,7 @@ app.get('/api/fixture/hoja-vocalia/:idFecha/:idxPartido', basicAuth, async (req,
     const jugadoresEq1 = await User.find({ team: nombreEq1, eliminado: false })
       .sort({ lastName: 1, firstName: 1 })
       .lean();
-    const jugadoresEq2 = await User.find({ team: nombreEq2 })
+    const jugadoresEq2 = await User.find({ team: nombreEq2,eliminado: false })
       .sort({ lastName: 1, firstName: 1 })
       .lean();
 
@@ -1722,10 +1722,10 @@ app.get('/api/fixture/hojas-vocalia/:idFecha', basicAuth, async (req, res) => {
       const nombreEq2 = p.equipo2?.nombre || 'EQUIPO 2';
       const fechaPartido = p.fechaPartido || fecha.fechaCabecera || null;
 
-      const jugadoresEq1 = await User.find({ team: nombreEq1 })
+      const jugadoresEq1 = await User.find({ team: nombreEq1, eliminado: false })
         .sort({ lastName: 1, firstName: 1 })
         .lean();
-      const jugadoresEq2 = await User.find({ team: nombreEq2 })
+      const jugadoresEq2 = await User.find({ team: nombreEq2, eliminado: false })
         .sort({ lastName: 1, firstName: 1 })
         .lean();
 
