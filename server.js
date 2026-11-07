@@ -5,12 +5,26 @@ const multer = require('multer');
 const cors = require('cors');
 const dayjs = require('dayjs');
 const customParseFormat = require('dayjs/plugin/customParseFormat');
-const { configure, uploadBuffer } = require('./utils/cloudinary');
+const { configure, uploadBuffer, parseCloudinaryUrl, descargarArchivo } = require('./utils/cloudinary');
 const User = require('./models/User');
 const Dirigente = require('./models/Dirigente');
 const Equipo = require('./models/Equipo');
 const FixtureFecha = require('./models/FixtureFecha');
 const basicAuth = require('./middleware/basicAuth');
+const AutorizacionPlantilla = require('./models/AutorizacionPlantilla');
+const {
+  PLACEHOLDERS,
+  PARENTESCOS,
+  PLANTILLA_PREDETERMINADA,
+  CAMPOS_PLANTILLA,
+  CAMPOS_ARCHIVO_REPRESENTANTE,
+  obtenerPlantillaActiva,
+  validarPlantilla,
+  generarPdfAutorizacion,
+  datosEjemplo,
+  validarRepresentante,
+  firmarAutorizacion,
+} = require('./utils/autorizacion');
 const ExcelJS = require('exceljs');
 const axios = require('axios');
 const puppeteer = require('puppeteer');
@@ -100,7 +114,7 @@ function drawHeader(doc) {
     .text('Acuerdo ministerial N. 0184 | 15 agosto 2023', titleX, startY + 20, { width: titleW, align: 'left' });
 
   doc.fillColor(COLOR_SECOND).font('Helvetica-Bold').fontSize(11)
-    .text('Nómina de jugadores – 6º campeonato de indorfútbol masculino', titleX, startY + 36, { width: titleW, align: 'left' });
+    .text('Nómina de jugadores – 7º campeonato de indorfútbol masculino', titleX, startY + 36, { width: titleW, align: 'left' });
   doc.restore();
 
   // línea divisoria
@@ -159,7 +173,7 @@ function drawVocaliaHeader(doc, { tituloExtra = '' } = {}) {
     .font('Helvetica')
     .fontSize(9)
     .fillColor(COLOR_TEXT)
-    .text('6º Campeonato de indorfútbol masculino', textX, yTop + 16, {
+    .text('7º Campeonato de indorfútbol masculino', textX, yTop + 16, {
       width: textW,
       align: 'center',
     });
@@ -1019,20 +1033,23 @@ const upload = multer({
   storage,
   limits: { fileSize: 10 * 1024 * 1024 }, // 10 MB
   fileFilter: (req, file, cb) => {
-    // Campos que SOLO permiten imágenes
-    const onlyImages = ['idImage', 'idBackImage', 'selfieImage'];
+    // Cédula del representante: imagen o PDF. En iPhone los PDF pueden llegar como
+    // octet-stream o sin tipo; se aceptan por extensión y luego se valida el contenido real
+    if (file.fieldname === 'representanteCedulaImage') {
+      const mt = (file.mimetype || '').toLowerCase();
+      const ext = (file.originalname || '').split('.').pop().toLowerCase();
+      const okTipo = mt.startsWith('image/') || mt === 'application/pdf';
+      const okExt = ['pdf', 'jpg', 'jpeg', 'png', 'heic', 'heif', 'webp', 'gif', 'bmp'].includes(ext);
+      if (okTipo || ((mt === '' || mt === 'application/octet-stream') && okExt)) return cb(null, true);
+      return cb(new Error('La cédula del representante solo permite imagen o PDF'), false);
+    }
+
+    // Campos que SOLO permiten imágenes (la autorización ahora se firma digitalmente)
+    const onlyImages = ['idImage', 'idBackImage', 'selfieImage', ...CAMPOS_ARCHIVO_REPRESENTANTE];
 
     if (onlyImages.includes(file.fieldname)) {
       if (file.mimetype.startsWith('image/')) return cb(null, true);
       return cb(new Error(`El campo "${file.fieldname}" solo permite imágenes`), false);
-    }
-
-    // Campo autorización: imagen o PDF
-    if (file.fieldname === 'autorizacion') {
-      const okImage = file.mimetype.startsWith('image/');
-      const okPdf = file.mimetype === 'application/pdf';
-      if (okImage || okPdf) return cb(null, true);
-      return cb(new Error('La autorización solo permite imagen o PDF'), false);
     }
 
     // Si llega algún otro campo no esperado
@@ -1056,14 +1073,13 @@ app.get('/api/teams/validate/:code', (req, res) => {
 const nameRegex = /^[A-Za-zÁÉÍÓÚáéíóúÑñ\s]+$/;
 const identRegex = /^[A-Za-z0-9\-]+$/;
 
+const camposArchivoJugador = upload.fields(
+  ['idImage', 'idBackImage', 'selfieImage', ...CAMPOS_ARCHIVO_REPRESENTANTE].map(name => ({ name, maxCount: 1 }))
+);
+
 app.post(
   '/api/users',
-  upload.fields([
-    { name: 'idImage', maxCount: 1 },
-    { name: 'idBackImage', maxCount: 1 },
-    { name: 'selfieImage', maxCount: 1 },
-    { name: 'autorizacion', maxCount: 1 },
-  ]),
+  camposArchivoJugador,
   async (req, res) => {
     try {
       const { codDirigente, firstName, lastName, dob, identificacion, numjugador } = req.body;
@@ -1103,6 +1119,21 @@ app.post(
         return res.status(400).json({ message: 'Todas las imágenes de identificación y selfie son obligatorias' });
       }
 
+      // 14 a 17 años: datos del representante y firma obligatorios (se valida antes de subir archivos)
+      const requiereAut = age >= 14 && age < 18;
+      let rep = null;
+      if (requiereAut) {
+        const r = validarRepresentante(req.body, req.files, identificacion);
+        if (r.error) return res.status(400).json({ message: r.error });
+        rep = r.datos;
+      }
+
+      // Evita subir archivos si la identificación ya existe
+      const existsId = await User.exists({ identificacion });
+      if (existsId) {
+        return res.status(409).json({ message: 'Identificación ya registrada', field: 'identificacion' });
+      }
+
       const idResult = await uploadBuffer(
         req.files['idImage'][0].buffer,
         `id_front_${identificacion}_${Date.now()}`
@@ -1116,19 +1147,14 @@ app.post(
         `selfie_${identificacion}_${Date.now()}`
       );
 
-      let autorizacionUrl = null;
-      const requiereAut = age >= 14 && age < 18;
+      let firmado = { autorizacionUrl: null };
       if (requiereAut) {
-        if (!req.files['autorizacion']) return res.status(400).json({ message: 'Autorización requerida (14-17 años)' });
-        const autFile = req.files['autorizacion'][0];
-        const isPdf = autFile.mimetype === 'application/pdf';
-
-        const autRes = await uploadBuffer(
-          autFile.buffer,
-          `aut_${identificacion}_${Date.now()}`,
-          isPdf ? 'raw' : 'image' // 👈 aquí elegimos
-        );
-        autorizacionUrl = autRes.secure_url;
+        firmado = await firmarAutorizacion({
+          req,
+          rep,
+          jugador: { firstName, lastName, identificacion, age, team: equipo.nombre },
+          uploadBuffer,
+        });
       }
 
       const user = new User({
@@ -1142,7 +1168,7 @@ app.post(
         idImageUrl: idResult.secure_url,
         idBackImageUrl: idBackResult.secure_url,
         selfieImageUrl: selfieResult.secure_url,
-        autorizacionUrl,
+        ...firmado,
         team: equipo.nombre,
       });
 
@@ -1206,12 +1232,7 @@ app.get('/api/dirigentes/:id/jugadores', async (req, res) => {
 // Editar jugador (solo campos enviados; imágenes opcionales)
 app.put(
   '/api/jugadores/:id',
-  upload.fields([
-    { name: 'idImage', maxCount: 1 },
-    { name: 'idBackImage', maxCount: 1 },
-    { name: 'selfieImage', maxCount: 1 },
-    { name: 'autorizacion', maxCount: 1 },
-  ]),
+  camposArchivoJugador,
   async (req, res) => {
     try {
       const jugador = await User.findById(req.params.id);
@@ -1242,6 +1263,9 @@ app.put(
         if (dupNum) return res.status(400).json({ message: `Número ${n} ya registrado en ${jugador.team}` });
       }
 
+      // Nueva firma de autorización (opcional; obligatoria si es menor y no tiene autorización)
+      const vieneFirma = !!(req.files && req.files['firmaRepresentante']);
+
       if (up.dob) {
         const parsed = dayjs(up.dob, ['YYYY-MM-DD', 'DD/MM/YYYY'], true);
         if (!parsed.isValid()) return res.status(400).json({ message: 'Fecha inválida' });
@@ -1251,13 +1275,22 @@ app.put(
 
         const requiereAut = jugador.age >= 14 && jugador.age < 18;
         if (requiereAut) {
-          const vieneNuevaAut = !!(req.files && req.files['autorizacion']);
-          if (!jugador.autorizacionUrl && !vieneNuevaAut) {
-            return res.status(400).json({ message: 'Autorización requerida (14-17 años)' });
+          if (!jugador.autorizacionUrl && !vieneFirma) {
+            return res.status(400).json({ message: 'Autorización requerida (14-17 años): el representante debe firmarla' });
           }
         } else {
           jugador.autorizacionUrl = null;
         }
+      }
+
+      let rep = null;
+      if (vieneFirma) {
+        if (!(jugador.age >= 14 && jugador.age < 18)) {
+          return res.status(400).json({ message: 'La autorización solo aplica para jugadores de 14 a 17 años' });
+        }
+        const r = validarRepresentante(req.body, req.files, up.identificacion || jugador.identificacion);
+        if (r.error) return res.status(400).json({ message: r.error });
+        rep = r.datos;
       }
 
       maybeSet('firstName');
@@ -1270,15 +1303,9 @@ app.put(
         if (req.files[field]) {
           const file = req.files[field][0];
 
-          let resourceType = 'image';
-          if (field === 'autorizacion' && file.mimetype === 'application/pdf') {
-            resourceType = 'raw';
-          }
-
           const respUp = await uploadBuffer(
             file.buffer,
-            `${name}_${jugador.identificacion}_${Date.now()}`,
-            resourceType
+            `${name}_${jugador.identificacion}_${Date.now()}`
           );
 
           jugador[`${field}Url`] = respUp.secure_url;
@@ -1289,7 +1316,14 @@ app.put(
       await doUpload('idImage', 'id_front_edit');
       await doUpload('idBackImage', 'id_back_edit');
       await doUpload('selfieImage', 'selfie_edit');
-      await doUpload('autorizacion', 'aut_edit');
+
+      // Se genera con los datos ya actualizados del jugador
+      if (rep) {
+        const firmado = await firmarAutorizacion({ req, rep, jugador, uploadBuffer });
+        jugador.autorizacionUrl = firmado.autorizacionUrl;
+        jugador.representante = firmado.representante;
+        jugador.autorizacionInfo = firmado.autorizacionInfo;
+      }
 
       await jugador.save();
       res.json({ message: 'Jugador actualizado correctamente', jugador });
@@ -1459,17 +1493,8 @@ app.get('/api/admin/autorizaciones/consolidado', basicAuth, async (req, res) => 
     const helveticaFont = await masterDoc.embedFont(StandardFonts.Helvetica);
 
     // Helper para descargar bytes desde la URL
-    const fetchBuffer = async (url) => {
-      const resp = await axios.get(url, {
-        responseType: 'arraybuffer',
-        timeout: 20000,
-        validateStatus: (s) => s >= 200 && s < 400,
-      });
-      return {
-        buffer: Buffer.from(resp.data),
-        contentType: resp.headers['content-type'] || '',
-      };
-    };
+    // Soporta PDFs bloqueados para entrega pública en Cloudinary (descarga autenticada)
+    const fetchBuffer = descargarArchivo;
 
     // Helper: detectar si es PDF
     const isPdfBuffer = (buffer, contentType, url) => {
@@ -1486,99 +1511,107 @@ app.get('/api/admin/autorizaciones/consolidado', basicAuth, async (req, res) => 
     };
 
     let totalPaginas = 0;
+    const fontBold = await masterDoc.embedFont(StandardFonts.HelveticaBold);
 
+    // Texto seguro para la fuente estándar del PDF (evita errores con emojis u otros símbolos)
+    const txt = (t, max = 105) => {
+      const limpio = String(t || '').replace(/[^\x20-\x7E\u00A0-\u00FF]/g, '?');
+      return limpio.length > max ? `${limpio.slice(0, max - 3)}...` : limpio;
+    };
+
+    // Página de aviso cuando un archivo no se pudo cargar (para que el admin lo note)
+    const paginaAviso = (titulo, detalle) => {
+      const page = masterDoc.addPage();
+      const { height } = page.getSize();
+      page.drawText(txt(titulo), { x: 40, y: height - 60, size: 13, font: fontBold, color: rgb(0.7, 0.1, 0.1) });
+      page.drawText(ajustar(detalle, helveticaFont, 11, page.getWidth() - 80), { x: 40, y: height - 82, size: 11, font: helveticaFont, color: rgb(0, 0, 0) });
+      totalPaginas++;
+    };
+
+    // Agrega un archivo (PDF o imagen) al PDF maestro con una etiqueta identificadora
+    // Recorta el texto para que quepa en el ancho disponible
+    const ajustar = (t, font, size, maxW) => {
+      let s = txt(t, 300);
+      if (font.widthOfTextAtSize(s, size) <= maxW) return s;
+      while (s.length > 1 && font.widthOfTextAtSize(`${s}...`, size) > maxW) s = s.slice(0, -1);
+      return `${s}...`;
+    };
+
+    const agregarArchivo = async (url, titulo, detalle) => {
+      const etiqueta = `${titulo} - ${detalle}`;
+      // Las imágenes se piden a Cloudinary ya convertidas a JPG (las fotos de iPhone pueden ser HEIC)
+      const esImagenCloudinary = url.includes('res.cloudinary.com') && url.includes('/image/upload/');
+      const urlDescarga = esImagenCloudinary ? toCloudinaryFormat(url, 'jpg', 1400) : url;
+      const { buffer, contentType } = await fetchBuffer(urlDescarga);
+
+      if (isPdfBuffer(buffer, contentType, urlDescarga)) {
+        // 🔹 PDF → copiamos sus páginas al maestro
+        const srcDoc = await PDFLibDocument.load(buffer, { ignoreEncryption: true });
+        const srcPages = await masterDoc.copyPages(srcDoc, srcDoc.getPageIndices());
+        srcPages.forEach((page) => {
+          const { width, height } = page.getSize();
+          page.drawText(ajustar(etiqueta, helveticaFont, 9, width - 80), {
+            x: 40, y: height - 28, size: 9, font: helveticaFont, color: rgb(0.3, 0.3, 0.3),
+          });
+          masterDoc.addPage(page);
+          totalPaginas++;
+        });
+        return;
+      }
+
+      // 🔹 Imagen → una página con la imagen centrada y el título arriba
+      const isJpeg = buffer.length > 2 && buffer[0] === 0xff && buffer[1] === 0xd8;
+      const img = isJpeg ? await masterDoc.embedJpg(buffer) : await masterDoc.embedPng(buffer);
+      const page = masterDoc.addPage();
+      const { width, height } = page.getSize();
+
+      // Título en negrita y debajo los datos del representante y jugador
+      page.drawText(ajustar(titulo, fontBold, 14, width - 80), { x: 40, y: height - 50, size: 14, font: fontBold, color: rgb(0, 0, 0) });
+      page.drawText(ajustar(detalle, helveticaFont, 10, width - 80), { x: 40, y: height - 68, size: 10, font: helveticaFont, color: rgb(0.25, 0.25, 0.25) });
+
+      const maxW = width - 80;
+      const maxH = height - 130; // espacio para el título
+      const scale = Math.min(maxW / img.width, maxH / img.height, 1);
+      const imgW = img.width * scale;
+      const imgH = img.height * scale;
+      page.drawImage(img, {
+        x: (width - imgW) / 2,
+        y: (height - 80 - imgH) / 2,
+        width: imgW,
+        height: imgH,
+      });
+      totalPaginas++;
+    };
+
+    // Por cada jugador: autorización → cédula del representante → foto del representante con su cédula
     for (const u of users) {
       if (!u.autorizacionUrl) continue;
 
-      try {
-        const { buffer, contentType } = await fetchBuffer(u.autorizacionUrl);
+      const jugador =
+        `${u.firstName || ''} ${u.lastName || ''}`.trim() +
+        (u.identificacion ? ` - ${u.identificacion}` : '') +
+        (u.team ? ` (${u.team})` : '');
+      const rep = u.representante || {};
+      const repTxt = rep.nombre ? `${rep.nombre}${rep.cedula ? ` - C.I. ${rep.cedula}` : ''}` : '';
 
-        const esPdf = isPdfBuffer(buffer, contentType, u.autorizacionUrl);
+      const detalleRep = `${repTxt ? `Representante: ${repTxt} · ` : ''}Jugador: ${jugador}`;
+      const archivos = [
+        { url: u.autorizacionUrl, titulo: 'Autorización', detalle: jugador },
+      ];
+      if (rep.cedulaImageUrl) {
+        archivos.push({ url: rep.cedulaImageUrl, titulo: 'Cédula del representante', detalle: detalleRep });
+      }
+      if (rep.fotoImageUrl) {
+        archivos.push({ url: rep.fotoImageUrl, titulo: 'Foto del representante sosteniendo su cédula', detalle: detalleRep });
+      }
 
-        // Etiqueta con datos del jugador
-        const label =
-          `${u.firstName || ''} ${u.lastName || ''}`.trim() +
-          (u.identificacion ? ` - ${u.identificacion}` : '');
-
-        if (esPdf) {
-          // 🔹 Caso 1: el archivo es PDF → copiamos sus páginas al maestro
-          let srcDoc;
-          try {
-            srcDoc = await PDFLibDocument.load(buffer, {
-              ignoreEncryption: true,
-            });
-          } catch (loadErr) {
-            console.warn(
-              `No se pudo leer el PDF de ${u._id} (${u.autorizacionUrl}):`,
-              loadErr.message
-            );
-            // Intentamos tratarlo como imagen como fallback
-            throw loadErr;
-          }
-
-          const indices = srcDoc.getPageIndices();
-          const srcPages = await masterDoc.copyPages(srcDoc, indices);
-
-          srcPages.forEach((page) => {
-            const { width, height } = page.getSize();
-            // Etiqueta arriba
-            page.drawText(label, {
-              x: 40,
-              y: height - 40,
-              size: 12,
-              font: helveticaFont,
-              color: rgb(0, 0, 0),
-            });
-            masterDoc.addPage(page);
-            totalPaginas++;
-          });
-        } else {
-          // 🔹 Caso 2: es imagen (JPG/PNG) → creamos una página y pegamos la imagen
-          const page = masterDoc.addPage();
-          const { width, height } = page.getSize();
-
-          let img;
-          const isJpeg =
-            buffer.length > 2 && buffer[0] === 0xff && buffer[1] === 0xd8;
-          if (isJpeg) {
-            img = await masterDoc.embedJpg(buffer);
-          } else {
-            img = await masterDoc.embedPng(buffer);
-          }
-
-          const maxW = width - 80;
-          const maxH = height - 140; // dejamos espacio para texto
-          const scale = Math.min(maxW / img.width, maxH / img.height, 1);
-          const imgW = img.width * scale;
-          const imgH = img.height * scale;
-
-          const x = (width - imgW) / 2;
-          const y = (height - imgH) / 2;
-
-          page.drawImage(img, {
-            x,
-            y,
-            width: imgW,
-            height: imgH,
-          });
-
-          // Etiqueta bajo la imagen
-          page.drawText(label, {
-            x: 40,
-            y: 40,
-            size: 12,
-            font: helveticaFont,
-            color: rgb(0, 0, 0),
-          });
-
-          totalPaginas++;
+      for (const a of archivos) {
+        try {
+          await agregarArchivo(a.url, a.titulo, a.detalle);
+        } catch (err) {
+          console.warn(`No se pudo agregar al consolidado (${u._id}) ${a.url}:`, err.message);
+          paginaAviso(`No se pudo cargar: ${a.titulo}`, a.detalle);
         }
-      } catch (err) {
-        console.warn(
-          `No se pudo procesar autorización de usuario ${u._id} (${u.autorizacionUrl}):`,
-          err.message
-        );
-        // seguimos con los demás usuarios
       }
     }
 
@@ -2291,6 +2324,52 @@ app.get('/api/users', async (req, res) => {
   res.json(users);
 });
 
+// Columnas de representante/autorización para los Excel (van después de las imágenes)
+const COLUMNAS_REPRESENTANTE = [
+  { header: 'REPRESENTANTE', key: 'repNombre', width: 30 },
+  { header: 'CI_REPRESENTANTE', key: 'repCedula', width: 16 },
+  { header: 'PARENTESCO', key: 'repParentesco', width: 18 },
+  { header: 'TELEFONO_REPRESENTANTE', key: 'repTelefono', width: 18 },
+  { header: 'AUTORIZACION', key: 'autorizacion', width: 18 },
+];
+const filaRepresentante = (u, req) => ({
+  repNombre: u.representante?.nombre || '',
+  repCedula: u.representante?.cedula || '',
+  repParentesco: u.representante?.parentesco || '',
+  repTelefono: u.representante?.telefono || '',
+  autorizacion: u.autorizacionUrl
+    ? { text: 'Ver autorización', hyperlink: urlVisibleArchivo(req, u.autorizacionUrl) }
+    : '',
+});
+
+// Los PDF (recursos "raw") se entregan a través de /api/archivos/ver porque Cloudinary
+// bloquea su entrega pública directa
+function urlVisibleArchivo(req, url) {
+  if (!url || !url.includes('/raw/upload/')) return url;
+  const proto = String(req.headers['x-forwarded-proto'] || req.protocol).split(',')[0];
+  return `${proto}://${req.get('host')}/api/archivos/ver?url=${encodeURIComponent(url)}`;
+}
+
+// Muestra en el navegador un archivo propio de Cloudinary (autorizaciones / cédulas en PDF)
+app.get('/api/archivos/ver', async (req, res) => {
+  try {
+    const url = String(req.query.url || '');
+    const info = parseCloudinaryUrl(url);
+    if (!info || info.cloud !== process.env.CLOUDINARY_CLOUD_NAME) {
+      return res.status(400).json({ message: 'Archivo no válido' });
+    }
+    const { buffer, contentType } = await descargarArchivo(url);
+    const esPdf = buffer.slice(0, 5).toString('latin1') === '%PDF-';
+    const nombre = (info.publicIdConExt.split('/').pop() || 'archivo').replace(/[^\w.\-]/g, '_');
+    res.setHeader('Content-Type', esPdf ? 'application/pdf' : (contentType || 'application/octet-stream'));
+    res.setHeader('Content-Disposition', `inline; filename="${esPdf && !nombre.endsWith('.pdf') ? `${nombre}.pdf` : nombre}"`);
+    res.setHeader('Cache-Control', 'private, max-age=3600');
+    res.end(buffer);
+  } catch (e) {
+    res.status(502).json({ message: 'No se pudo obtener el archivo', detail: e.message });
+  }
+});
+
 // Protected export endpoint
 app.get('/api/users/export', basicAuth, async (req, res) => {
   try {
@@ -2311,6 +2390,7 @@ app.get('/api/users/export', basicAuth, async (req, res) => {
       { header: 'FOTO_CEDULA_FRONTAL', key: 'idImage', width: 18 },
       { header: 'FOTO_CEDULA_TRASERA', key: 'idBackImage', width: 18 },
       { header: 'FOTO_SELFIE', key: 'selfieImage', width: 18 },
+      ...COLUMNAS_REPRESENTANTE,
     ];
 
     // add rows
@@ -2326,6 +2406,7 @@ app.get('/api/users/export', basicAuth, async (req, res) => {
         idImage: '',
         idBackImage: '',
         selfieImage: '',
+        ...filaRepresentante(u, req),
       });
     });
 
@@ -2402,6 +2483,7 @@ app.get('/api/users/export-eliminados', basicAuth, async (req, res) => {
       { header: 'FOTO_CEDULA_FRONTAL', key: 'idImage', width: 18 },
       { header: 'FOTO_CEDULA_TRASERA', key: 'idBackImage', width: 18 },
       { header: 'FOTO_SELFIE', key: 'selfieImage', width: 18 },
+      ...COLUMNAS_REPRESENTANTE,
     ];
 
     users.forEach((u) => {
@@ -2416,6 +2498,7 @@ app.get('/api/users/export-eliminados', basicAuth, async (req, res) => {
         idImage: '',
         idBackImage: '',
         selfieImage: '',
+        ...filaRepresentante(u, req),
       });
     });
 
@@ -2473,6 +2556,94 @@ app.get('/api/equipos/validate/:codigo', async (req, res) => {
     res.json({ nombre: equipo.nombre, codigo: equipo.codigo, dirigenteId: equipo.dirigenteId });
   } catch (e) {
     res.status(500).json({ message: 'Error validando código' });
+  }
+});
+
+// =============================
+// FORMATO DE AUTORIZACIÓN (menores de 14 a 17 años)
+// =============================
+const plantillaPublica = (p) => ({
+  version: p.version,
+  ...Object.fromEntries(CAMPOS_PLANTILLA.map(c => [c, p[c] || ''])),
+});
+
+// Formato vigente (usado por el registro y la edición del dirigente)
+app.get('/api/autorizacion/plantilla', async (req, res) => {
+  try {
+    const p = await obtenerPlantillaActiva();
+    res.json({ plantilla: plantillaPublica(p), placeholders: PLACEHOLDERS, parentescos: PARENTESCOS });
+  } catch (e) {
+    res.status(500).json({ message: 'Error obteniendo el formato de autorización', detail: e.message });
+  }
+});
+
+// Admin: formato vigente + historial de versiones
+app.get('/api/admin/autorizacion/plantilla', basicAuth, async (req, res) => {
+  try {
+    const activa = await obtenerPlantillaActiva();
+    const historial = await AutorizacionPlantilla.find().sort({ version: -1 }).lean();
+    const usos = await User.aggregate([
+      { $match: { 'autorizacionInfo.plantillaVersion': { $ne: null } } },
+      { $group: { _id: '$autorizacionInfo.plantillaVersion', total: { $sum: 1 } } },
+    ]);
+    const usosMap = Object.fromEntries(usos.map(u => [u._id, u.total]));
+    res.json({
+      plantilla: plantillaPublica(activa),
+      historial: historial.map(h => ({
+        ...plantillaPublica(h),
+        activa: !!h.activa,
+        createdAt: h.createdAt,
+        firmadas: usosMap[h.version] || 0,
+      })),
+      predeterminada: PLANTILLA_PREDETERMINADA,
+      placeholders: PLACEHOLDERS,
+    });
+  } catch (e) {
+    res.status(500).json({ message: 'Error obteniendo el formato', detail: e.message });
+  }
+});
+
+// Admin: guardar cambios = crear una NUEVA versión (las autorizaciones ya firmadas no se tocan)
+app.put('/api/admin/autorizacion/plantilla', basicAuth, async (req, res) => {
+  try {
+    const { plantilla, error } = validarPlantilla(req.body);
+    if (error) return res.status(400).json({ message: error });
+
+    const activa = await obtenerPlantillaActiva();
+    const sinCambios = CAMPOS_PLANTILLA.every(c => (activa[c] || '') === plantilla[c]);
+    if (sinCambios) return res.status(400).json({ message: 'No hay cambios respecto al formato vigente' });
+
+    const nueva = await AutorizacionPlantilla.create({
+      ...plantilla,
+      version: activa.version + 1,
+      activa: true,
+    });
+    await AutorizacionPlantilla.updateMany({ _id: { $ne: nueva._id } }, { activa: false });
+
+    res.json({ message: `Formato actualizado (versión ${nueva.version})`, plantilla: plantillaPublica(nueva) });
+  } catch (e) {
+    if (e.code === 11000) {
+      return res.status(409).json({ message: 'El formato fue modificado al mismo tiempo. Recarga e intenta de nuevo.' });
+    }
+    res.status(500).json({ message: 'Error guardando el formato', detail: e.message });
+  }
+});
+
+// Admin: vista previa en PDF con datos y firma de ejemplo (no guarda nada)
+app.post('/api/admin/autorizacion/preview', basicAuth, async (req, res) => {
+  try {
+    const { plantilla, error } = validarPlantilla(req.body);
+    if (error) return res.status(400).json({ message: error });
+    const pdf = await generarPdfAutorizacion({
+      plantilla: { ...plantilla, version: req.body.version },
+      datos: datosEjemplo(),
+      firmaEjemplo: true,
+    });
+    res.setHeader('Content-Type', 'application/pdf');
+    res.setHeader('Content-Disposition', 'inline; filename="Vista_previa_autorizacion.pdf"');
+    res.end(pdf);
+  } catch (e) {
+    res.status(500).json({ message: 'Error generando la vista previa', detail: e.message });
   }
 });
 
@@ -2629,6 +2800,22 @@ app.delete('/api/admin/equipos/:id', basicAuth, async (req, res) => {
   } catch (e) {
     res.status(500).json({ message: 'Error eliminando equipo', detail: e.message });
   }
+});
+
+// Errores de subida de archivos (multer): responder JSON claro en lugar de un 500 genérico
+app.use((err, req, res, next) => {
+  if (!err) return next();
+  if (err instanceof multer.MulterError) {
+    if (err.code === 'LIMIT_FILE_SIZE') {
+      return res.status(413).json({ message: 'Archivo demasiado grande. Máximo 10MB por archivo.' });
+    }
+    return res.status(400).json({ message: `Error en archivo: ${err.message}` });
+  }
+  if (err.message && /solo permite|no permitido/i.test(err.message)) {
+    return res.status(415).json({ message: err.message });
+  }
+  console.error(err);
+  return res.status(500).json({ message: 'Error en servidor', detail: err.message });
 });
 
 const PORT = process.env.PORT || 4000;
