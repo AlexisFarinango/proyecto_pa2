@@ -27,6 +27,17 @@ const UserSchema = new mongoose.Schema({
     tiene:       { type: Boolean },
     aseguradora: { type: String } // "NA (No Aplica)" cuando no tiene
   },
+  // Cambio de equipo: jugó en otro club de la liga el campeonato anterior (PASE obligatorio si es así)
+  cambioEquipo: {
+    jugoOtroEquipo: { type: Boolean },
+    clubAnterior:   { type: String, default: null },
+    paseUrl:        { type: String, default: null }
+  },
+  // Declaración de veracidad aceptada al registrar
+  declaracionVeracidad: {
+    aceptada: { type: Boolean },
+    fecha:    { type: Date }
+  },
   // Evidencia de la firma electrónica
   autorizacionInfo: {
     plantillaVersion: { type: Number },

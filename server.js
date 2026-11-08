@@ -24,6 +24,7 @@ const {
   datosEjemplo,
   validarRepresentante,
   firmarAutorizacion,
+  tipoPorContenido,
 } = require('./utils/autorizacion');
 const ExcelJS = require('exceljs');
 const axios = require('axios');
@@ -1035,13 +1036,15 @@ const upload = multer({
   fileFilter: (req, file, cb) => {
     // Cédula del representante: imagen o PDF. En iPhone los PDF pueden llegar como
     // octet-stream o sin tipo; se aceptan por extensión y luego se valida el contenido real
-    if (file.fieldname === 'representanteCedulaImage') {
+    // (mismo criterio para el PASE de cambio de equipo)
+    if (file.fieldname === 'representanteCedulaImage' || file.fieldname === 'paseFile') {
       const mt = (file.mimetype || '').toLowerCase();
       const ext = (file.originalname || '').split('.').pop().toLowerCase();
       const okTipo = mt.startsWith('image/') || mt === 'application/pdf';
       const okExt = ['pdf', 'jpg', 'jpeg', 'png', 'heic', 'heif', 'webp', 'gif', 'bmp'].includes(ext);
       if (okTipo || ((mt === '' || mt === 'application/octet-stream') && okExt)) return cb(null, true);
-      return cb(new Error('La cédula del representante solo permite imagen o PDF'), false);
+      const nombreCampo = file.fieldname === 'paseFile' ? 'El PASE' : 'La cédula del representante';
+      return cb(new Error(`${nombreCampo} solo permite imagen o PDF`), false);
     }
 
     // Campos que SOLO permiten imágenes (la autorización ahora se firma digitalmente)
@@ -1074,6 +1077,10 @@ const nameRegex = /^[A-Za-zÁÉÍÓÚáéíóúÑñ\s]+$/;
 const identRegex = /^[A-Za-z0-9\-]+$/;
 
 const camposArchivoJugador = upload.fields(
+  ['idImage', 'idBackImage', 'selfieImage', 'paseFile', ...CAMPOS_ARCHIVO_REPRESENTANTE].map(name => ({ name, maxCount: 1 }))
+);
+// Edición del dirigente: el PASE no se puede cambiar (si se envía, multer lo rechaza)
+const camposArchivoEdicion = upload.fields(
   ['idImage', 'idBackImage', 'selfieImage', ...CAMPOS_ARCHIVO_REPRESENTANTE].map(name => ({ name, maxCount: 1 }))
 );
 
@@ -1130,6 +1137,29 @@ app.post(
         seguro = r.seguro;
       }
 
+      // Cambio de equipo: si jugó en otro club de la liga el campeonato anterior, el PASE es obligatorio
+      const jugoOtroEquipo = String(req.body.jugoOtroEquipo || '').trim().toUpperCase();
+      if (!['SI', 'NO'].includes(jugoOtroEquipo)) {
+        return res.status(400).json({ message: 'Indique si participó en otro club de la liga en el campeonato anterior' });
+      }
+      const paseFile = req.files?.paseFile?.[0];
+      const tipoPase = paseFile ? tipoPorContenido(paseFile.buffer) : null;
+      const clubAnterior = jugoOtroEquipo === 'SI'
+        ? String(req.body.clubAnterior || '').trim().replace(/\s+/g, ' ').toUpperCase()
+        : null;
+      if (jugoOtroEquipo === 'SI') {
+        if (!clubAnterior || clubAnterior.length < 2 || clubAnterior.length > 100) {
+          return res.status(400).json({ message: 'Ingrese el nombre del club deportivo al que perteneció previamente' });
+        }
+        if (!paseFile) return res.status(400).json({ message: 'Adjunte el PASE realizado por el dirigente del club deportivo previo' });
+        if (!tipoPase) return res.status(400).json({ message: 'El PASE debe ser una imagen o un PDF válido' });
+      }
+
+      // Declaración de veracidad obligatoria
+      if (String(req.body.declaracionVeracidad) !== 'true') {
+        return res.status(400).json({ message: 'Debe aceptar la declaración de veracidad de la información' });
+      }
+
       // Evita subir archivos si la identificación ya existe
       const existsId = await User.exists({ identificacion });
       if (existsId) {
@@ -1148,6 +1178,14 @@ app.post(
         req.files['selfieImage'][0].buffer,
         `selfie_${identificacion}_${Date.now()}`
       );
+
+      let paseUrl = null;
+      if (jugoOtroEquipo === 'SI') {
+        const paseRes = tipoPase === 'pdf'
+          ? await uploadBuffer(paseFile.buffer, `pase_${identificacion}_${Date.now()}.pdf`, 'raw')
+          : await uploadBuffer(paseFile.buffer, `pase_${identificacion}_${Date.now()}`);
+        paseUrl = paseRes.secure_url;
+      }
 
       let firmado = { autorizacionUrl: null };
       if (requiereAut) {
@@ -1172,6 +1210,8 @@ app.post(
         idBackImageUrl: idBackResult.secure_url,
         selfieImageUrl: selfieResult.secure_url,
         ...firmado,
+        cambioEquipo: { jugoOtroEquipo: jugoOtroEquipo === 'SI', clubAnterior, paseUrl },
+        declaracionVeracidad: { aceptada: true, fecha: new Date() },
         team: equipo.nombre,
       });
 
@@ -1235,7 +1275,7 @@ app.get('/api/dirigentes/:id/jugadores', async (req, res) => {
 // Editar jugador (solo campos enviados; imágenes opcionales)
 app.put(
   '/api/jugadores/:id',
-  camposArchivoJugador,
+  camposArchivoEdicion,
   async (req, res) => {
     try {
       const jugador = await User.findById(req.params.id);
@@ -2339,6 +2379,9 @@ const COLUMNAS_REPRESENTANTE = [
   { header: 'SEGURO_MEDICO', key: 'seguro', width: 14 },
   { header: 'ASEGURADORA', key: 'aseguradora', width: 26 },
   { header: 'AUTORIZACION', key: 'autorizacion', width: 18 },
+  { header: 'JUGO_OTRO_EQUIPO', key: 'jugoOtroEquipo', width: 18 },
+  { header: 'CLUB_ANTERIOR', key: 'clubAnterior', width: 26 },
+  { header: 'PASE', key: 'pase', width: 14 },
 ];
 const filaRepresentante = (u, req) => ({
   repNombre: u.representante?.nombre || '',
@@ -2349,6 +2392,11 @@ const filaRepresentante = (u, req) => ({
   aseguradora: u.seguroMedico?.aseguradora || '',
   autorizacion: u.autorizacionUrl
     ? { text: 'Ver autorización', hyperlink: urlVisibleArchivo(req, u.autorizacionUrl) }
+    : '',
+  jugoOtroEquipo: u.cambioEquipo?.jugoOtroEquipo === undefined ? '' : (u.cambioEquipo.jugoOtroEquipo ? 'SÍ' : 'NO'),
+  clubAnterior: u.cambioEquipo?.clubAnterior || '',
+  pase: u.cambioEquipo?.paseUrl
+    ? { text: 'Ver pase', hyperlink: urlVisibleArchivo(req, u.cambioEquipo.paseUrl) }
     : '',
 });
 

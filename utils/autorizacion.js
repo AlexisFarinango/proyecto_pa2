@@ -556,4 +556,5 @@ module.exports = {
   datosEjemplo,
   validarRepresentante,
   firmarAutorizacion,
+  tipoPorContenido,
 };
