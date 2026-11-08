@@ -16,6 +16,8 @@ const PLACEHOLDERS = [
   { key: 'JUGADOR_CEDULA', label: 'Cédula del jugador', ejemplo: '1750123456', obligatorio: true },
   { key: 'JUGADOR_EDAD', label: 'Edad del jugador', ejemplo: '16' },
   { key: 'EQUIPO', label: 'Equipo', ejemplo: 'DEPORTIVO EJEMPLO' },
+  { key: 'SEGURO_MEDICO', label: 'Seguro médico [X] SÍ / [ ] NO', ejemplo: '[X] SÍ  /  [  ] NO' },
+  { key: 'ASEGURADORA', label: 'Aseguradora / cobertura (NA si no tiene)', ejemplo: 'IESS (PÚBLICO)' },
   { key: 'FECHA', label: 'Fecha de firma', ejemplo: '7 de noviembre del 2026' },
 ];
 const PLACEHOLDER_KEYS = PLACEHOLDERS.map(p => p.key);
@@ -24,15 +26,21 @@ const PARENTESCOS = ['Padre', 'Madre', 'Representante legal'];
 const PLANTILLA_PREDETERMINADA = {
   titulo: 'AUTORIZACIÓN PARA PARTICIPACIÓN DE MENOR DE EDAD',
   destinatario: 'Señor\nEulis Espinoza\nPresidente de la Liga Barrial Bienestar Familiar\nPresente.-',
-  cuerpo:
-    'Yo, {{REPRESENTANTE_NOMBRE}}, con cédula de ciudadanía No. {{REPRESENTANTE_CEDULA}}, en calidad de ' +
-    '{{PARENTESCO}} del menor de edad {{JUGADOR_NOMBRE}}, con cédula de identidad No. {{JUGADOR_CEDULA}}, ' +
-    'faculto y autorizo a que mi representado participe con el equipo {{EQUIPO}} en el Séptimo Campeonato ' +
-    'Masculino de Indorfútbol, organizado por la Liga a la que usted representa, para que bajo mi ' +
-    'responsabilidad participe de los encuentros de indorfútbol programados semanalmente. Así mismo, ' +
-    'renuncio a entablar cualquier reclamo en relación con esta actividad deportiva hacia los directivos ' +
-    'del equipo o de la Liga Barrial Bienestar Familiar.\n\n' +
-    'Por la favorable atención que se dé a la presente, anticipo mis agradecimientos.',
+  // Un tabulador al inicio de una línea = un nivel de sangría
+  cuerpo: [
+    'Yo, {{REPRESENTANTE_NOMBRE}}, con cédula de ciudadanía No. {{REPRESENTANTE_CEDULA}}, en calidad de {{PARENTESCO}} representante legal del menor {{JUGADOR_NOMBRE}}, con cédula de identidad No. {{JUGADOR_CEDULA}}, de {{JUGADOR_EDAD}} años de edad, AUTORIZO de manera expresa, libre y voluntaria su inscripción y participación en el Séptimo Campeonato Masculino de Indorfútbol, organizado por la Liga a la que usted representa y que mi representado participe con el equipo {{EQUIPO}}, el cual se llevará a cabo en el periodo 2026-2027.',
+    '',
+    'Para el efecto, declaro, acepto y me comprometo a lo siguiente:',
+    '1. Estado de Aptitud Física y Salud: Declaro bajo juramento que mi representado se encuentra en perfecto estado de salud física y mental, y que cuenta con la valoración médica correspondiente que lo faculta para la práctica de deportes de alta intensidad y contacto como el fútbol. Certifico que no padece preexistencias médicas, lesiones vigentes, condiciones cardíacas o alergias que pongan en riesgo su integridad durante el desarrollo del torneo.',
+    '2. Conocimiento de Riesgos Inherentes: Reconozco que la práctica del fútbol profesional o amateur conlleva riesgos físicos naturales e inherentes al juego (como caídas, golpes accidentales, esguinces o fracturas). Asumo dichos riesgos como parte de la naturaleza deportiva de la actividad.',
+    '3. Cumplimiento del Reglamento: Me comprometo a que mi representado acatará las bases del torneo, las reglas de juego, las decisiones arbitrales y las normas de comportamiento dictadas por el comité organizador, promoviendo el juego limpio.',
+    '4. Protocolo de Emergencia y Gastos Médicos: En caso de que ocurra un accidente fortuito o emergencia médica durante los partidos, autorizo al personal asignado por la organización para que gestione los primeros auxilios y, de ser necesario, coordine el traslado inmediato de mi representado al centro de salud más cercano.',
+    '\t• Información de Respaldo Médico:',
+    '\t\t• El menor cuenta con seguro médico: {{SEGURO_MEDICO}}',
+    '\t\t• Nombre de la Aseguradora / Cobertura (público o privado): {{ASEGURADORA}}',
+    '5. Uso de Imagen: Autorizo a los organizadores del torneo a captar y utilizar imágenes, fotografías o videos de mi representado exclusivamente con fines informativos, periodísticos, estadísticos o de difusión en las plataformas y redes oficiales de la Liga.',
+    'En señal de total conformidad, aceptación y corresponsabilidad de los términos expuestos en este instrumento, firmo la presente autorización en la ciudad de Quito, Ecuador.',
+  ].join('\n'),
   ciudad: 'Quito',
   nota: 'Adjunto copia de cédula del representante en el formulario de inscripción.',
   despedida: 'Atentamente,',
@@ -199,8 +207,9 @@ async function generarPdfAutorizacion({ plantilla, datos, firmaPng = null, firma
     y -= s * 1.55;
   };
 
-  // Párrafo justificado con mezcla de texto normal y negrita
-  const parrafo = (segs) => {
+  // Párrafo justificado con mezcla de texto normal y negrita (sangria en puntos desde el margen)
+  const parrafo = (segs, sangria = 0) => {
+    const anchoLinea = maxW - sangria;
     const palabras = [];
     let cur = null;
     for (const seg of segs) {
@@ -223,7 +232,7 @@ async function generarPdfAutorizacion({ plantilla, datos, firmaPng = null, firma
     let linea = { palabras: [], width: 0 };
     for (const pal of palabras) {
       const nuevo = linea.palabras.length ? linea.width + espacio + pal.width : pal.width;
-      if (nuevo > maxW && linea.palabras.length) {
+      if (nuevo > anchoLinea && linea.palabras.length) {
         lineas.push(linea);
         linea = { palabras: [pal], width: pal.width };
       } else {
@@ -238,10 +247,10 @@ async function generarPdfAutorizacion({ plantilla, datos, firmaPng = null, firma
       const ultima = i === lineas.length - 1;
       let gap = espacio;
       if (!ultima && ln.palabras.length > 1) {
-        const extra = (maxW - ln.width) / (ln.palabras.length - 1);
+        const extra = (anchoLinea - ln.width) / (ln.palabras.length - 1);
         if (extra < espacio * 4) gap = espacio + extra;
       }
-      let x = PAGE.mx;
+      let x = PAGE.mx + sangria;
       for (const pal of ln.palabras) {
         for (const pz of pal.piezas) {
           page.drawText(pz.t, { x, y: y - size, size, font: pz.font, color: COLOR_TEXTO });
@@ -256,10 +265,13 @@ async function generarPdfAutorizacion({ plantilla, datos, firmaPng = null, firma
   const bloqueTexto = (texto) => {
     const parrafos = texto.split(/\n\s*\n/);
     parrafos.forEach((par, i) => {
-      // Un salto de línea simple dentro del párrafo se respeta como línea nueva
+      // Un salto de línea simple dentro del párrafo se respeta como línea nueva.
+      // Cada tabulador (o 4 espacios) al inicio de la línea agrega un nivel de sangría.
       par.split('\n').forEach(linea => {
-        if (linea.trim()) parrafo(segmentar(linea.trim(), datos));
-        else y -= lh;
+        if (!linea.trim()) { y -= lh; return; }
+        const inicio = linea.match(/^[\t ]*/)[0];
+        const niveles = (inicio.match(/\t/g) || []).length + Math.floor(inicio.replace(/\t/g, '').length / 4);
+        parrafo(segmentar(linea.trim(), datos), Math.min(niveles, 6) * 22);
       });
       if (i < parrafos.length - 1) y -= lh * 0.6;
     });
@@ -422,6 +434,17 @@ function validarRepresentante(body = {}, files = {}, identificacionJugador = '')
   if (!telRegex.test(telefono)) {
     return { error: 'Teléfono del representante inválido (7 a 15 dígitos)' };
   }
+  // Seguro médico del menor: SI exige el nombre de la aseguradora; NO se completa con "NA (No Aplica)"
+  const seguroMedico = String(body.seguroMedico || '').trim().toUpperCase();
+  if (!['SI', 'NO'].includes(seguroMedico)) {
+    return { error: 'Indique si el menor cuenta con seguro médico (SÍ / NO)' };
+  }
+  const aseguradora = seguroMedico === 'SI'
+    ? String(body.aseguradora || '').trim().replace(/\s+/g, ' ').toUpperCase()
+    : ASEGURADORA_NA;
+  if (seguroMedico === 'SI' && (aseguradora.length < 2 || aseguradora.length > 120)) {
+    return { error: 'Ingrese el nombre de la aseguradora / cobertura del menor' };
+  }
   if (String(body.aceptaAutorizacion) !== 'true') {
     return { error: 'El representante debe aceptar los términos de la autorización' };
   }
@@ -439,8 +462,14 @@ function validarRepresentante(body = {}, files = {}, identificacionJugador = '')
   if (!files?.representanteFotoImage?.[0]) {
     return { error: 'La foto del representante con su cédula es obligatoria' };
   }
-  return { datos: { nombre, cedula, telefono, parentesco } };
+  return {
+    datos: { nombre, cedula, telefono, parentesco },
+    seguro: { tiene: seguroMedico === 'SI', aseguradora },
+  };
 }
+
+const ASEGURADORA_NA = 'NA (No Aplica)';
+const textoSeguro = (tiene) => (tiene ? '[X] SÍ  /  [  ] NO' : '[  ] SÍ  /  [X] NO');
 
 function ipDe(req) {
   const fwd = req.headers['x-forwarded-for'];
@@ -448,7 +477,7 @@ function ipDe(req) {
 }
 
 // Genera el PDF firmado, sube todos los archivos a Cloudinary y devuelve lo que se guarda en el jugador
-async function firmarAutorizacion({ req, rep, jugador, uploadBuffer }) {
+async function firmarAutorizacion({ req, rep, seguro, jugador, uploadBuffer }) {
   const plantilla = await obtenerPlantillaParaFirma(req.body.plantillaVersion);
   const ahora = new Date();
   const firmaBuf = req.files.firmaRepresentante[0].buffer;
@@ -462,6 +491,8 @@ async function firmarAutorizacion({ req, rep, jugador, uploadBuffer }) {
     JUGADOR_CEDULA: jugador.identificacion,
     JUGADOR_EDAD: String(jugador.age),
     EQUIPO: jugador.team,
+    SEGURO_MEDICO: textoSeguro(seguro.tiene),
+    ASEGURADORA: seguro.aseguradora,
     FECHA: fechaLarga(ahora),
   };
 
@@ -500,6 +531,7 @@ async function firmarAutorizacion({ req, rep, jugador, uploadBuffer }) {
       fotoImageUrl: fotoRes.secure_url,
       firmaUrl: firmaRes.secure_url,
     },
+    seguroMedico: { tiene: seguro.tiene, aseguradora: seguro.aseguradora },
     autorizacionInfo: {
       plantillaVersion: plantilla.version,
       firmadoEn: ahora,

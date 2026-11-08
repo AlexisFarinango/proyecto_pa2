@@ -22,6 +22,11 @@ const UserSchema = new mongoose.Schema({
     fotoImageUrl:   { type: String }, // foto del representante sosteniendo su cédula
     firmaUrl:       { type: String }
   },
+  // Seguro médico del menor declarado en la autorización
+  seguroMedico: {
+    tiene:       { type: Boolean },
+    aseguradora: { type: String } // "NA (No Aplica)" cuando no tiene
+  },
   // Evidencia de la firma electrónica
   autorizacionInfo: {
     plantillaVersion: { type: Number },

@@ -1122,10 +1122,12 @@ app.post(
       // 14 a 17 años: datos del representante y firma obligatorios (se valida antes de subir archivos)
       const requiereAut = age >= 14 && age < 18;
       let rep = null;
+      let seguro = null;
       if (requiereAut) {
         const r = validarRepresentante(req.body, req.files, identificacion);
         if (r.error) return res.status(400).json({ message: r.error });
         rep = r.datos;
+        seguro = r.seguro;
       }
 
       // Evita subir archivos si la identificación ya existe
@@ -1152,6 +1154,7 @@ app.post(
         firmado = await firmarAutorizacion({
           req,
           rep,
+          seguro,
           jugador: { firstName, lastName, identificacion, age, team: equipo.nombre },
           uploadBuffer,
         });
@@ -1284,6 +1287,7 @@ app.put(
       }
 
       let rep = null;
+      let seguro = null;
       if (vieneFirma) {
         if (!(jugador.age >= 14 && jugador.age < 18)) {
           return res.status(400).json({ message: 'La autorización solo aplica para jugadores de 14 a 17 años' });
@@ -1291,6 +1295,7 @@ app.put(
         const r = validarRepresentante(req.body, req.files, up.identificacion || jugador.identificacion);
         if (r.error) return res.status(400).json({ message: r.error });
         rep = r.datos;
+        seguro = r.seguro;
       }
 
       maybeSet('firstName');
@@ -1319,10 +1324,11 @@ app.put(
 
       // Se genera con los datos ya actualizados del jugador
       if (rep) {
-        const firmado = await firmarAutorizacion({ req, rep, jugador, uploadBuffer });
+        const firmado = await firmarAutorizacion({ req, rep, seguro, jugador, uploadBuffer });
         jugador.autorizacionUrl = firmado.autorizacionUrl;
         jugador.representante = firmado.representante;
         jugador.autorizacionInfo = firmado.autorizacionInfo;
+        jugador.seguroMedico = firmado.seguroMedico;
       }
 
       await jugador.save();
@@ -2330,6 +2336,8 @@ const COLUMNAS_REPRESENTANTE = [
   { header: 'CI_REPRESENTANTE', key: 'repCedula', width: 16 },
   { header: 'PARENTESCO', key: 'repParentesco', width: 18 },
   { header: 'TELEFONO_REPRESENTANTE', key: 'repTelefono', width: 18 },
+  { header: 'SEGURO_MEDICO', key: 'seguro', width: 14 },
+  { header: 'ASEGURADORA', key: 'aseguradora', width: 26 },
   { header: 'AUTORIZACION', key: 'autorizacion', width: 18 },
 ];
 const filaRepresentante = (u, req) => ({
@@ -2337,6 +2345,8 @@ const filaRepresentante = (u, req) => ({
   repCedula: u.representante?.cedula || '',
   repParentesco: u.representante?.parentesco || '',
   repTelefono: u.representante?.telefono || '',
+  seguro: u.seguroMedico?.tiene === undefined ? '' : (u.seguroMedico.tiene ? 'SÍ' : 'NO'),
+  aseguradora: u.seguroMedico?.aseguradora || '',
   autorizacion: u.autorizacionUrl
     ? { text: 'Ver autorización', hyperlink: urlVisibleArchivo(req, u.autorizacionUrl) }
     : '',
@@ -2571,6 +2581,8 @@ const plantillaPublica = (p) => ({
 app.get('/api/autorizacion/plantilla', async (req, res) => {
   try {
     const p = await obtenerPlantillaActiva();
+    // Nunca cachear: el registro debe mostrar siempre el último formato guardado
+    res.setHeader('Cache-Control', 'no-store');
     res.json({ plantilla: plantillaPublica(p), placeholders: PLACEHOLDERS, parentescos: PARENTESCOS });
   } catch (e) {
     res.status(500).json({ message: 'Error obteniendo el formato de autorización', detail: e.message });
