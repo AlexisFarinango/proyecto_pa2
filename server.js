@@ -28,7 +28,6 @@ const {
 } = require('./utils/autorizacion');
 const ExcelJS = require('exceljs');
 const axios = require('axios');
-const puppeteer = require('puppeteer');
 const PDFDocument = require('pdfkit');
 const { PDFDocument: PDFLibDocument, StandardFonts, rgb } = require('pdf-lib');
 const { Request, Response } = require('express');
@@ -1064,6 +1063,14 @@ mongoose
   .connect(process.env.MONGO_URI)
   .then(() => console.log('✅ Conectado a MongoDB Atlas en la base Futbol'))
   .catch((err) => console.error('❌ Error al conectar:', err));
+
+// Health check: lo llama el frontend apenas se abre la página para "despertar" el servidor
+// (Render gratuito lo apaga tras 15 min sin uso). Responde 200 solo cuando MongoDB ya está conectado.
+app.get('/api/health', (req, res) => {
+  const db = mongoose.connection.readyState === 1;
+  res.setHeader('Cache-Control', 'no-store');
+  res.status(db ? 200 : 503).json({ ok: db, db });
+});
 
 app.get('/api/teams/validate/:code', (req, res) => {
   const { code } = req.params;
