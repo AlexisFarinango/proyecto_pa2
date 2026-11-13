@@ -1378,6 +1378,9 @@ app.put(
         jugador.seguroMedico = firmado.seguroMedico;
       }
 
+      // Fecha de última actualización: solo si realmente cambió algo (datos, fotos o autorización)
+      if (jugador.isModified()) jugador.updatedAt = new Date();
+
       await jugador.save();
       res.json({ message: 'Jugador actualizado correctamente', jugador });
     } catch (err) {
@@ -2389,7 +2392,19 @@ const COLUMNAS_REPRESENTANTE = [
   { header: 'JUGO_OTRO_EQUIPO', key: 'jugoOtroEquipo', width: 18 },
   { header: 'CLUB_ANTERIOR', key: 'clubAnterior', width: 26 },
   { header: 'PASE', key: 'pase', width: 14 },
+  // Fechas reales (no texto) para poder ordenar y filtrar en Excel; hora de Ecuador
+  { header: 'FECHA_REGISTRO', key: 'fechaRegistro', width: 18, style: { numFmt: 'dd/mm/yyyy hh:mm' } },
+  { header: 'FECHA_ULTIMA_ACTUALIZACION', key: 'fechaActualizacion', width: 26, style: { numFmt: 'dd/mm/yyyy hh:mm' } },
+  { header: 'MODIFICADO', key: 'modificado', width: 13 },
 ];
+
+// Ecuador no tiene horario de verano: UTC-5 fijo. Excel guarda la fecha sin zona horaria,
+// así que se desplaza para que muestre la hora local.
+const OFFSET_ECUADOR_MS = 5 * 60 * 60 * 1000;
+const fechaExcel = (d) => (d ? new Date(new Date(d).getTime() - OFFSET_ECUADOR_MS) : null);
+// "Modificado" si la última actualización es más de 1 minuto posterior al registro
+const fueModificado = (u) =>
+  !!(u.createdAt && u.updatedAt && new Date(u.updatedAt) - new Date(u.createdAt) > 60 * 1000);
 const filaRepresentante = (u, req) => ({
   repNombre: u.representante?.nombre || '',
   repCedula: u.representante?.cedula || '',
@@ -2405,6 +2420,9 @@ const filaRepresentante = (u, req) => ({
   pase: u.cambioEquipo?.paseUrl
     ? { text: 'Ver pase', hyperlink: urlVisibleArchivo(req, u.cambioEquipo.paseUrl) }
     : '',
+  fechaRegistro: fechaExcel(u.createdAt),
+  fechaActualizacion: fechaExcel(u.updatedAt),
+  modificado: fueModificado(u) ? 'SÍ' : 'NO',
 });
 
 // Los PDF (recursos "raw") se entregan a través de /api/archivos/ver porque Cloudinary
