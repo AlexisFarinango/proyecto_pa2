@@ -49,7 +49,10 @@ const UserSchema = new mongoose.Schema({
   team:      { type: String, required: true },
   eliminado: { type: Boolean, default: false },
   createdAt: { type: Date, default: Date.now },
-  updatedAt: { type: Date, default: Date.now }
+  updatedAt: { type: Date, default: Date.now },
+  // Última edición hecha por el dirigente desde "Editar jugador" (null = nunca editado).
+  // Es independiente de updatedAt, que también cambia con eliminaciones o scripts masivos.
+  editadoPorDirigenteEn: { type: Date, default: null }
 });
 
 module.exports = mongoose.model('User', UserSchema);
