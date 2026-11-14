@@ -292,7 +292,7 @@ function drawJugadoresTable(doc, {
   jugadores, // array de hasta 20 (puede tener nulls)
 }) {
   const headerH = 24;
-  const rowH = 16;
+  const rowH = 15; // un poco más baja para dejar espacio al recuadro de T.A. / T.R.
   const totalRows = 20;
 
   const numW = 16;
@@ -301,11 +301,12 @@ function drawJugadoresTable(doc, {
   const smallW = 20;
   const gap = 3;
 
+  // TA y TR ya no van aquí: se anotan en el recuadro bajo INGRESA / SALE
   const nombreW = width - (
-    numW + numJugW + extraW + smallW * 3 + gap * 6
+    numW + numJugW + extraW + smallW + gap * 4
   );
 
-  const cols = [numW, nombreW, numJugW, extraW, smallW, smallW, smallW];
+  const cols = [numW, nombreW, numJugW, extraW, smallW];
 
   // ==== Encabezado ====
   doc.save();
@@ -334,10 +335,6 @@ function drawJugadoresTable(doc, {
   cx += extraW + gap;
 
   doc.text('G', cx, y + 6, { width: smallW, align: 'center' });
-  cx += smallW + gap;
-  doc.text('TA', cx, y + 6, { width: smallW, align: 'center' });
-  cx += smallW + gap;
-  doc.text('TR', cx, y + 6, { width: smallW, align: 'center' });
 
   doc.restore();
   doc.rect(x, y, width, headerH).strokeColor(BORDER_OUT).lineWidth(0.6).stroke();
@@ -385,10 +382,7 @@ function drawJugadoresTable(doc, {
     // columna extra vacía
     cx2 += extraW + gap;
 
-    // G / TA / TR vacíos
-    doc.text('', cx2, curY + 3, { width: smallW }); cx2 += smallW + gap;
-    doc.text('', cx2, curY + 3, { width: smallW }); cx2 += smallW + gap;
-    doc.text('', cx2, curY + 3, { width: smallW });
+    // G vacío (se llena a mano)
 
     // verticales de la fila
     let colX = x;
@@ -523,6 +517,54 @@ function drawCambiosTable(doc, { x, y, width }) {
   return totalH;
 }
 
+// Casillas por tipo de tarjeta (ajustables: entre 6 y 8)
+const CASILLAS_TA = 8;
+const CASILLAS_TR = 6;
+
+// Recuadro de tarjetas: JUGADORES AMONESTADOS (T.A.) y JUGADORES EXPULSADOS (T.R.)
+// Cada bloque: cabecera gris + una fila de casillas "N°" para anotar el número del jugador
+function drawTarjetasTable(doc, { x, y, width }) {
+  const titleH = 13;
+  const cellH = 21;
+  const gapBloques = 4;
+
+  const drawBloque = (titulo, casillas, top) => {
+    const cellW = width / casillas;
+
+    // Cabecera
+    doc.rect(x, top, width, titleH).fill('#f2f2f2');
+    doc.font('Helvetica-Bold').fontSize(8).fillColor('#000');
+    doc.text(titulo, x, top + 3, { width, align: 'center', lineBreak: false });
+
+    // Línea bajo cabecera
+    doc.moveTo(x, top + titleH).lineTo(x + width, top + titleH)
+      .strokeColor(BORDER_INNER).lineWidth(0.5).stroke();
+
+    // Casillas
+    for (let i = 1; i < casillas; i++) {
+      const xx = x + cellW * i;
+      doc.moveTo(xx, top + titleH).lineTo(xx, top + titleH + cellH)
+        .strokeColor(BORDER_INNER).lineWidth(0.5).stroke();
+    }
+
+    doc.font('Helvetica-Bold').fontSize(6).fillColor('#000');
+    for (let i = 0; i < casillas; i++) {
+      doc.text('N°', x + cellW * i + 2, top + titleH + 2, { lineBreak: false });
+    }
+
+    // Marco del bloque
+    doc.rect(x, top, width, titleH + cellH)
+      .strokeColor(BORDER_OUT).lineWidth(0.6).stroke();
+
+    return titleH + cellH;
+  };
+
+  const hTA = drawBloque('JUGADORES AMONESTADOS (T.A.)', CASILLAS_TA, y);
+  const hTR = drawBloque('JUGADORES EXPULSADOS (T.R.)', CASILLAS_TR, y + hTA + gapBloques);
+
+  return hTA + gapBloques + hTR;
+}
+
 
 
 
@@ -627,7 +669,18 @@ function drawVocaliaFront(doc, {
   const cambiosHLeft = drawCambiosTable(doc, { x: leftX, y: yAfterPlayers, width: halfW });
   const cambiosHRight = drawCambiosTable(doc, { x: rightX, y: yAfterPlayers, width: halfW });
 
-  const yAfterCambios = yAfterPlayers + Math.max(cambiosHLeft, cambiosHRight) + 80;
+  const yTarjetas = yAfterPlayers + Math.max(cambiosHLeft, cambiosHRight) + 6;
+
+  // ===== Tarjetas (T.A. / T.R.) por equipo, al final de INGRESA / SALE =====
+  const tarjetasHLeft = drawTarjetasTable(doc, { x: leftX, y: yTarjetas, width: halfW });
+  const tarjetasHRight = drawTarjetasTable(doc, { x: rightX, y: yTarjetas, width: halfW });
+
+  // Espacio para firmar, sin pasar el margen inferior (evita que PDFKit cree otra página)
+  const maxFirmaY = doc.page.height - doc.page.margins.bottom - 26;
+  const yAfterCambios = Math.min(
+    yTarjetas + Math.max(tarjetasHLeft, tarjetasHRight) + 34,
+    maxFirmaY
+  );
 
   // ===== Firmas: CAPITÁN O DIRECTIVO =====
   doc.font('Helvetica').fontSize(9).fillColor('#000');
